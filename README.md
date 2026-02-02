@@ -2,44 +2,81 @@
 
 **Sui-Native x402-Style Payment Infrastructure for AI Agents**
 
-APEX (Agent Payment EXecution Protocol) provides x402-equivalent payment functionality on Sui, enabling AI agents to pay for API access with atomic guarantees impossible on other chains.
+APEX (Agent Payment EXecution Protocol) provides x402-equivalent payment functionality on Sui, leveraging Sui's unique object model and Programmable Transaction Blocks (PTBs).
 
 ## What is x402?
 
-[x402](https://x402.org/) is a payment protocol for AI agents, based on HTTP 402 "Payment Required". It enables:
+[x402](https://x402.org/) is Coinbase's payment protocol for AI agents, based on HTTP 402 "Payment Required". It enables:
 - Pay-per-call API billing
 - Machine-to-machine payments
-- Automated payment verification
+- Automated payment verification via signed authorizations (EIP-3009/Permit2)
 
-**APEX brings this to Sui** with significant improvements via Programmable Transaction Blocks (PTBs).
+**APEX brings similar functionality to Sui** with a different architectural approach.
 
-## Why Sui / APEX?
+## How x402 Works vs APEX
 
-| Feature | x402 (Solana/Base) | APEX (Sui) |
-|---------|-------------------|------------|
-| **Atomicity** | Multi-transaction | Single PTB |
-| **Pay-and-Use** | Separate txs | Atomic in one PTB |
-| **Access Control** | Account signatures | Capability objects |
-| **Streaming** | External service | Native on-chain |
-| **Composability** | Limited | Full PTB composability |
-
-### The Killer Feature: Atomic Pay-and-Trade
-
-On Sui, you can pay for an API AND use it in a **single atomic transaction**:
-
+### x402 Flow (Base/Solana)
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Single PTB                                │
-│  1. Split payment from user's coin                          │
-│  2. Purchase API access → Get AccessCapability              │
-│  3. Execute trade via DeepBook                              │
-│  4. Transfer results to user                                │
-│                                                             │
-│  ALL ATOMIC: If step 3 fails, step 2 is reverted!          │
-└─────────────────────────────────────────────────────────────┘
+Client                    Server                   Facilitator           Blockchain
+   │                         │                          │                     │
+   │─── GET /resource ──────>│                          │                     │
+   │<── 402 + PaymentReq ────│                          │                     │
+   │                         │                          │                     │
+   │ [Client signs auth]     │                          │                     │
+   │                         │                          │                     │
+   │─── GET + signature ────>│                          │                     │
+   │                         │─── verify ──────────────>│                     │
+   │                         │<── valid ────────────────│                     │
+   │                         │                          │                     │
+   │<── 200 + resource ──────│ (optimistic)             │                     │
+   │                         │                          │                     │
+   │                         │─── settle ──────────────>│                     │
+   │                         │                          │──── transfer ──────>│
+   │                         │<── receipt ─────────────>│                     │
 ```
 
-This is **impossible on other chains** which require multiple transactions.
+### APEX Flow (Sui)
+```
+Client                              Sui Blockchain
+   │                                      │
+   │  [Build PTB locally]                 │
+   │  ┌─────────────────────────────┐     │
+   │  │ 1. purchase_access()        │     │
+   │  │ 2. use_access() or trade    │     │
+   │  │ 3. transfer outputs         │     │
+   │  └─────────────────────────────┘     │
+   │                                      │
+   │────── Submit single PTB ────────────>│
+   │                                      │
+   │<───── Result (all or nothing) ───────│
+```
+
+## Honest Comparison
+
+| Aspect | x402 (Base/Solana) | APEX (Sui) |
+|--------|-------------------|------------|
+| **Atomicity** | ✅ Both chains support atomic multi-operation transactions | ✅ PTBs are atomic |
+| **Payment Model** | Off-chain signature → on-chain settlement | On-chain payment in PTB |
+| **Facilitator** | Required (submits tx, pays gas) | Not required (user submits) |
+| **Gas Abstraction** | ✅ Facilitator pays gas | ❌ User pays gas |
+| **Optimistic Serving** | ✅ Can serve before settlement | ❌ Must wait for tx |
+| **Object Passing** | N/A (account model) | ✅ Pass objects between calls |
+| **Client Complexity** | Sign authorization | Build PTB |
+
+### Clarification on Atomicity
+
+**Solana** supports [atomic multi-instruction transactions](https://solana.com/docs/core/transactions) - if any instruction fails, all fail.
+
+**Ethereum/Base** supports atomic batching via [Multicall3](https://docs.base.org/base-account/improve-ux/batch-transactions) and smart contract patterns.
+
+**The difference is NOT atomicity** - all three chains can do atomic operations.
+
+### What Sui PTBs Actually Offer
+
+1. **Client-side composition**: Build complex multi-contract interactions without deploying new contracts ([up to 1,024 operations](https://docs.sui.io/concepts/transactions/prog-txn-blocks))
+2. **Object passing**: Results from one call can be inputs to another in the same PTB
+3. **No facilitator needed**: User builds and submits their own transaction
+4. **Capability objects**: Access rights as transferable objects, not account permissions
 
 ## Architecture
 
@@ -48,7 +85,7 @@ This is **impossible on other chains** which require multiple transactions.
 │                     APEX Protocol                            │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│  apex_payments.move (Core - x402 equivalent)                 │
+│  apex_payments.move (Core)                                   │
 │  ├── Service registration & pricing                         │
 │  ├── Access capability purchase                              │
 │  ├── Streaming payments                                      │
@@ -57,206 +94,378 @@ This is **impossible on other chains** which require multiple transactions.
 │                                                              │
 │  apex_trading.move (Trading patterns)                        │
 │  ├── Trading intents (escrow until filled)                  │
-│  ├── Gated trading (require payment first)                  │
-│  └── Example PTB patterns                                    │
+│  ├── Gated trading (verify payment first)                   │
+│  └── Composable with DeepBook                                │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
-                          │
-                          │ Agents call directly via PTBs
-                          ▼
-              ┌───────────────────────────┐
-              │   DeepBook V3 (external)  │
-              │   Any other Sui protocol  │
-              └───────────────────────────┘
 ```
 
-**Note**: APEX does NOT wrap DeepBook. Agents call DeepBook directly in their PTBs. The `apex_trading` module just provides helpful patterns and intent-based trading.
+## PTB Examples (Simulated)
 
-## Modules
+These examples show the transaction structure. Replace object IDs with real values after deployment.
 
-### apex_payments.move
+### Example 1: Purchase API Access
 
-The core x402-equivalent payment infrastructure:
+**Input:**
+```
+PTB Commands:
+  [0] MoveCall apex_payments::purchase_access
+      Args: config, service, coin<1 SUI>, units=100, duration=3600000, rate_limit=10, clock
 
-| Function | Description |
-|----------|-------------|
-| `register_service` | Register an API endpoint with pricing |
-| `purchase_access` | Pay for access, receive `AccessCapability` |
-| `use_access` | Consume units from a capability |
-| `verify_access` | Check if capability is valid (read-only) |
-| `open_stream` | Start streaming micropayments |
-| `record_stream_consumption` | Provider records usage |
-| `create_agent_wallet` | Create managed wallet with limits |
-| `agent_purchase_access` | Agent pays from its wallet |
-| `initiate_shield_transfer` | Hash-locked private transfer |
+Objects consumed:
+  - Coin<SUI>: 0xabc... (1 SUI)
 
-### apex_trading.move
-
-Trading patterns that compose with APEX payments:
-
-| Function | Description |
-|----------|-------------|
-| `create_swap_intent` | Declare desired trade, escrow input |
-| `fill_intent` | Executor fills intent, receives escrowed funds |
-| `cancel_intent` | Creator cancels and gets refund |
-| `verify_trade_payment` | Require APEX payment before trading |
-| `create_trading_service` | Create gated trading service |
-
-## Quick Start
-
-### Build
-
-```bash
-git clone https://github.com/anthropic/apex-protocol.git
-cd apex-protocol
-sui move build
+Objects created:
+  - AccessCapability { service_id, remaining_units: 100, expires_at: now+1hr }
 ```
 
-### Deploy to Testnet
+**Output:**
+```
+Status: Success
+Gas used: ~0.003 SUI
 
-```bash
-sui client switch --env testnet
-sui client faucet
-sui client publish --gas-budget 500000000
+Created objects:
+  - 0xdef... AccessCapability
+    ├── service_id: 0x123...
+    ├── remaining_units: 100
+    ├── expires_at: 1706900000000
+    └── rate_limit: 10
+
+Events:
+  - AccessPurchased { capability_id: 0xdef..., service_id: 0x123..., buyer: 0xuser..., units: 100, cost: 1000000000 }
 ```
 
-### Example: Purchase API Access
+---
 
-```typescript
-import { Transaction } from '@mysten/sui/transactions';
+### Example 2: Use Access (Consume Units)
 
-const tx = new Transaction();
+**Input:**
+```
+PTB Commands:
+  [0] MoveCall apex_payments::use_access
+      Args: capability, service, units=1, clock
 
-// Purchase access capability
-const accessCap = tx.moveCall({
-  target: `${APEX_PKG}::apex_payments::purchase_access`,
-  arguments: [
-    tx.object(protocolConfig),
-    tx.object(serviceProvider),
-    tx.object(paymentCoin),
-    tx.pure.u64(units),
-    tx.pure.u64(durationMs),
-    tx.pure.u64(rateLimit),
-    tx.object('0x6'), // Clock
-  ],
-});
-
-// AccessCapability is returned and can be used in the SAME PTB
-tx.transferObjects([accessCap], tx.pure.address(recipient));
+Objects mutated:
+  - AccessCapability: 0xdef...
 ```
 
-### Example: Atomic Pay-and-Trade
+**Output:**
+```
+Status: Success
+Gas used: ~0.001 SUI
 
-```typescript
-const tx = new Transaction();
+Mutated objects:
+  - 0xdef... AccessCapability
+    └── remaining_units: 100 → 99
 
-// 1. Split payment
-const [paymentCoin] = tx.splitCoins(tx.object(userCoin), [
-  tx.pure.u64(100_000_000n) // 0.1 SUI
-]);
-
-// 2. Purchase API access
-const accessCap = tx.moveCall({
-  target: `${APEX_PKG}::apex_payments::purchase_access`,
-  arguments: [config, service, paymentCoin, units, duration, rateLimit, clock],
-});
-
-// 3. Execute trade on DeepBook (DIRECT call, not wrapped)
-const [baseOut, quoteOut, deepOut] = tx.moveCall({
-  target: `${DEEPBOOK_PKG}::pool::swap_exact_base_for_quote`,
-  typeArguments: [BASE_TYPE, QUOTE_TYPE],
-  arguments: [pool, baseCoin, deepCoin, minQuote, clock],
-});
-
-// 4. Transfer everything
-tx.transferObjects([accessCap, quoteOut], recipient);
-
-// ALL ATOMIC - if trade fails, payment is never made!
+Events:
+  - AccessUsed { capability_id: 0xdef..., service_id: 0x123..., units_used: 1, remaining: 99 }
 ```
 
-### Example: Trading Intent
+---
 
-```typescript
-// Agent creates intent
-const tx = new Transaction();
-tx.moveCall({
-  target: `${APEX_PKG}::apex_trading::create_swap_intent`,
-  typeArguments: ['0x2::sui::SUI'],
-  arguments: [
-    tx.object(inputCoin),      // Escrowed until filled
-    tx.pure.u64(minOutput),    // Minimum output required
-    tx.pure.address(recipient),
-    tx.pure.u64(durationMs),
-    tx.object('0x6'),
-  ],
-});
+### Example 3: Atomic Pay-and-Trade (Single PTB)
 
-// Executor fills intent
-const fillTx = new Transaction();
-const [escrowedInput, receipt] = fillTx.moveCall({
-  target: `${APEX_PKG}::apex_trading::fill_intent`,
-  typeArguments: [INPUT_TYPE, OUTPUT_TYPE],
-  arguments: [
-    fillTx.object(intent),
-    fillTx.object(outputCoin), // Executor provides output
-    fillTx.object('0x6'),
-  ],
-});
+This demonstrates passing objects between commands in one PTB.
+
+**Input:**
 ```
+PTB Commands:
+  [0] SplitCoins gas, [100000000]  // 0.1 SUI for payment
+      → Result[0] = payment_coin
+
+  [1] MoveCall apex_payments::purchase_access
+      Args: config, service, Result[0], units=1, duration=0, rate_limit=0, clock
+      → Result[1] = access_capability
+
+  [2] MoveCall deepbook::pool::swap_exact_base_for_quote<SUI, USDC>
+      Args: pool, trade_coin, deep_coin, min_output=1000000, clock
+      → Result[2] = (base_out, quote_out, deep_out)
+
+  [3] TransferObjects [Result[1], Result[2].quote_out] → user_address
+
+Objects consumed:
+  - Gas coin (partially)
+  - Trade coin<SUI>: 0x111... (5 SUI)
+  - DEEP coin: 0x222... (for fees)
+```
+
+**Output:**
+```
+Status: Success
+Gas used: ~0.008 SUI
+
+Created objects:
+  - 0xaaa... AccessCapability (transferred to user)
+  - 0xbbb... Coin<USDC> value=10500000 (transferred to user)
+
+Mutated objects:
+  - DeepBook pool state
+  - Service provider revenue balance
+
+Events:
+  - AccessPurchased { ... }
+  - deepbook::SwapExecuted { base_in: 5000000000, quote_out: 10500000 }
+```
+
+**Key Point:** If the DeepBook swap fails (e.g., slippage too high), the entire PTB reverts - including the payment. User loses nothing.
+
+---
+
+### Example 4: Create Trading Intent
+
+**Input:**
+```
+PTB Commands:
+  [0] MoveCall apex_trading::create_swap_intent<SUI>
+      Args: input_coin<1 SUI>, min_output=2000000, recipient, duration=3600000, clock
+      → Creates shared SwapIntent object
+
+Objects consumed:
+  - Coin<SUI>: 0x333... (1 SUI) - ESCROWED in intent
+```
+
+**Output:**
+```
+Status: Success
+Gas used: ~0.002 SUI
+
+Created objects:
+  - 0xccc... SwapIntent<SUI> (shared)
+    ├── creator: 0xagent...
+    ├── escrowed: 1000000000 (1 SUI)
+    ├── min_output: 2000000 (2 USDC)
+    ├── recipient: 0xagent...
+    ├── deadline: now + 1hr
+    └── filled: false
+
+Events:
+  - IntentCreated { intent_id: 0xccc..., creator: 0xagent..., input_amount: 1000000000, min_output: 2000000 }
+```
+
+---
+
+### Example 5: Executor Fills Intent
+
+**Input:**
+```
+PTB Commands:
+  [0] MoveCall deepbook::pool::swap_exact_base_for_quote<SUI, USDC>
+      Args: pool, executor_sui_coin, deep_coin, min_output=2000000, clock
+      → Result[0] = (_, usdc_out, _)
+
+  [1] MoveCall apex_trading::fill_intent<SUI, USDC>
+      Args: intent, Result[0].usdc_out, clock
+      → Result[1] = (escrowed_sui, receipt)
+
+  [2] TransferObjects [Result[1].escrowed_sui, Result[1].receipt] → executor_address
+
+Executor provides:
+  - Coin<SUI> to swap on DeepBook
+  - Coin<DEEP> for fees
+```
+
+**Output:**
+```
+Status: Success
+Gas used: ~0.006 SUI
+
+Mutated objects:
+  - 0xccc... SwapIntent<SUI>
+    └── filled: false → true
+
+Created objects:
+  - 0xddd... Coin<SUI> value=1000000000 (escrowed, sent to executor)
+  - 0xeee... IntentReceipt (sent to executor)
+
+Transfers:
+  - USDC (2050000) → 0xagent... (intent recipient)
+
+Events:
+  - IntentFilled { intent_id: 0xccc..., executor: 0xexec..., output_amount: 2050000 }
+```
+
+**Executor profit:** Got 1 SUI, spent ~0.95 SUI worth to get 2.05 USDC. Kept the spread.
+
+---
+
+### Example 6: Open Payment Stream
+
+**Input:**
+```
+PTB Commands:
+  [0] MoveCall apex_payments::open_stream
+      Args: config, service, escrow_coin<10 SUI>, max_units=10000, clock
+      → Creates shared PaymentStream
+```
+
+**Output:**
+```
+Status: Success
+
+Created objects:
+  - 0xfff... PaymentStream (shared)
+    ├── consumer: 0xuser...
+    ├── service_id: 0x123...
+    ├── escrow: 10000000000 (10 SUI)
+    ├── unit_price: 1000000 (0.001 SUI per unit)
+    ├── total_consumed: 0
+    └── max_units: 10000
+
+Events:
+  - StreamOpened { stream_id: 0xfff..., escrow_amount: 10000000000 }
+```
+
+---
+
+### Example 7: Provider Records Consumption
+
+**Input:**
+```
+PTB Commands:
+  [0] MoveCall apex_payments::record_stream_consumption
+      Args: stream, service, units=150, clock
+
+Caller: Service provider only
+```
+
+**Output:**
+```
+Status: Success
+
+Mutated objects:
+  - 0xfff... PaymentStream
+    ├── escrow: 10000000000 → 9850000000
+    └── total_consumed: 0 → 150
+
+  - 0x123... ServiceProvider
+    └── revenue: +150000000 (0.15 SUI)
+
+Created objects:
+  - StreamTicket (sent to consumer)
+
+Events:
+  - StreamConsumed { stream_id: 0xfff..., units: 150, cost: 150000000 }
+```
+
+---
+
+### Example 8: Agent Wallet with Limits
+
+**Input:**
+```
+PTB Commands:
+  [0] MoveCall apex_payments::create_agent_wallet
+      Args: config, agent_id="bot-001", spend_limit=100000000, daily_limit=1000000000, funding<5 SUI>, clock
+```
+
+**Output:**
+```
+Status: Success
+
+Created objects:
+  - 0xaaa... AgentWallet (owned by creator)
+    ├── owner: 0xhuman...
+    ├── agent_id: "bot-001"
+    ├── balance: 5000000000
+    ├── spend_limit: 100000000 (0.1 SUI per tx)
+    ├── daily_limit: 1000000000 (1 SUI per day)
+    ├── daily_spent: 0
+    └── paused: false
+```
+
+**Agent purchase (enforces limits):**
+```
+PTB Commands:
+  [0] MoveCall apex_payments::agent_purchase_access
+      Args: wallet, config, service, units=5, duration=3600000, rate_limit=0, clock
+
+Checks:
+  ✓ cost (0.05 SUI) <= spend_limit (0.1 SUI)
+  ✓ daily_spent + cost (0.05 SUI) <= daily_limit (1 SUI)
+  ✓ wallet not paused
+```
+
+---
+
+### Example 9: Shield Transfer (Hash-Locked)
+
+**Sender initiates:**
+```
+PTB Commands:
+  [0] MoveCall apex_payments::initiate_shield_transfer
+      Args: config, recipient, coin<100 SUI>, duration=86400000, secret_hash, clock
+
+secret_hash = keccak256("my-secret-phrase")
+```
+
+**Output:**
+```
+Created objects:
+  - 0xbbb... ShieldSession (shared)
+    ├── sender: 0xsender...
+    ├── recipient: 0xrecipient...
+    ├── amount: 100000000000
+    ├── expires_at: now + 24hr
+    ├── funds: 100 SUI (escrowed)
+    └── secret_hash: 0x7f83b1...
+```
+
+**Recipient claims (with secret):**
+```
+PTB Commands:
+  [0] MoveCall apex_payments::complete_shield_transfer
+      Args: session, secret="my-secret-phrase", clock
+
+Verification:
+  keccak256("my-secret-phrase") == stored secret_hash ✓
+```
+
+**Output:**
+```
+Status: Success
+
+Deleted objects:
+  - 0xbbb... ShieldSession
+
+Transfers:
+  - 100 SUI → 0xrecipient...
+```
+
+---
 
 ## Key Concepts
 
 ### AccessCapability
 
-When you pay for API access, you receive an `AccessCapability` object:
+An object representing paid API access:
 
 ```move
 public struct AccessCapability has key, store {
+    id: UID,
     service_id: ID,       // Which service
     remaining_units: u64, // API calls remaining
-    expires_at: u64,      // Expiration timestamp
-    rate_limit: u64,      // Max units per epoch
+    expires_at: u64,      // Expiration (0 = never)
+    rate_limit: u64,      // Max per epoch (0 = unlimited)
+    epoch_usage: u64,     // Used this epoch
+    last_epoch: u64,
 }
 ```
 
-This capability can be:
-- Passed to other functions in the same PTB (atomic pay-and-use)
-- Stored for later use
-- Transferred to other addresses
+**Key property:** Can be passed between PTB commands, enabling atomic pay-then-use patterns.
 
-### Streaming Payments
+### Why Capability Objects Matter
 
-For continuous API usage (LLM inference, compute, etc.):
+On account-based chains, "access" is typically checked by:
+- API key validation
+- Signature verification
+- On-chain permission mapping
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  User opens stream with escrow                              │
-│           │                                                 │
-│           ▼                                                 │
-│  Provider records consumption → receives payment            │
-│           │                                                 │
-│           ▼                                                 │
-│  Stream closes → unused escrow refunded                     │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Agent Wallets
-
-AI agents can have managed wallets with spending controls:
-
-- **Spend limit**: Max per transaction
-- **Daily limit**: Max per day
-- **Pause**: Emergency stop
-- **Owner control**: Human owner can withdraw/adjust
-
-### Shield Transfers
-
-Hash-locked transfers for privacy:
-
-1. Sender creates transfer with `secret_hash`
-2. Recipient claims with `secret` (proves knowledge)
-3. Or: Designated recipient claims directly
-4. Expired transfers refund to sender
+On Sui, access is an **object you hold**:
+- Transfer it to grant access to others
+- Pass it to functions that require it
+- Compose it in PTBs with other operations
+- Burn it when done
 
 ## Project Structure
 
@@ -264,43 +473,44 @@ Hash-locked transfers for privacy:
 apex-protocol/
 ├── Move.toml
 ├── sources/
-│   ├── apex_payments.move    # Core x402 payment infrastructure
+│   ├── apex_payments.move    # Core payment infrastructure
 │   └── apex_trading.move     # Trading patterns & intents
 └── README.md
 ```
 
-## DeepBook Integration
+## Build & Deploy
 
-APEX does **not wrap** DeepBook. Instead:
+```bash
+# Build
+sui move build
 
-1. `apex_trading.move` imports DeepBook types for reference
-2. Agents call DeepBook directly in their PTBs
-3. APEX provides payment verification that can gate trading
+# Test (when tests added)
+sui move test
 
-This is intentional - wrapping adds overhead without value. Agents should call protocols directly.
+# Deploy to testnet
+sui client switch --env testnet
+sui client faucet
+sui client publish --gas-budget 500000000
+```
 
-### DeepBook Package Addresses
-
-| Network | Address |
-|---------|---------|
-| **Mainnet** | `0x2d93777cc8b67c064b495e8606f2f8f5fd578450347bbe7b36e0bc03963c1c40` |
-| **Testnet** | `0x22be4cade64bf2d02412c7e8d0e8beea2f78828b948118d46735315409371a3c` |
-
-## Security
+## Security Features
 
 - Overflow-protected arithmetic
 - Authorization checks on all sensitive operations
 - Bounded inputs (name lengths, etc.)
 - Rate limiting support
-- Emergency pause capability
-- Hash-locked transfers for privacy
+- Emergency pause (protocol and agent level)
+- Hash-locked transfers with expiry
+
+## References
+
+- [x402 Protocol](https://x402.org/) - Coinbase's HTTP 402 payment standard
+- [x402 GitHub](https://github.com/coinbase/x402) - Reference implementation
+- [Sui PTB Documentation](https://docs.sui.io/concepts/transactions/prog-txn-blocks)
+- [DeepBook V3](https://github.com/MystenLabs/deepbookv3)
+- [Solana Transaction Atomicity](https://solana.com/docs/core/transactions)
+- [Base Batch Transactions](https://docs.base.org/base-account/improve-ux/batch-transactions)
 
 ## License
 
 MIT
-
-## Links
-
-- [x402 Protocol](https://x402.org/)
-- [Sui Documentation](https://docs.sui.io/)
-- [DeepBook V3](https://github.com/MystenLabs/deepbookv3)
