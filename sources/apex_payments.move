@@ -10,7 +10,7 @@
 ///
 /// Key difference from x402: Uses Sui's PTBs for atomic pay-and-use patterns
 /// that are impossible on other chains.
-module dexter_payment::apex_payments;
+module apex_protocol::apex_payments;
 
 use sui::clock::{Self, Clock};
 use sui::coin::{Self, Coin};
@@ -296,7 +296,7 @@ fun init(_witness: APEX_PAYMENTS, ctx: &mut TxContext) {
 // ==================== Admin Functions ====================
 
 /// Pause/unpause protocol (admin only)
-public entry fun set_protocol_paused(
+public fun set_protocol_paused(
     _admin: &AdminCap,
     config: &mut ProtocolConfig,
     paused: bool,
@@ -305,7 +305,7 @@ public entry fun set_protocol_paused(
 }
 
 /// Update protocol fee (admin only)
-public entry fun set_protocol_fee(
+public fun set_protocol_fee(
     _admin: &AdminCap,
     config: &mut ProtocolConfig,
     new_fee_bps: u64,
@@ -315,7 +315,7 @@ public entry fun set_protocol_fee(
 }
 
 /// Withdraw treasury (admin only)
-public entry fun withdraw_treasury(
+public fun withdraw_treasury(
     _admin: &AdminCap,
     config: &mut ProtocolConfig,
     amount: u64,
@@ -333,7 +333,8 @@ public entry fun withdraw_treasury(
 // ==================== Service Provider Functions ====================
 
 /// Register a new service (x402-style API endpoint)
-public entry fun register_service(
+#[allow(lint(self_transfer))]
+public fun register_service(
     config: &mut ProtocolConfig,
     name: vector<u8>,
     description: vector<u8>,
@@ -382,7 +383,7 @@ public entry fun register_service(
 }
 
 /// Deactivate service (provider only)
-public entry fun deactivate_service(
+public fun deactivate_service(
     service: &mut ServiceProvider,
     ctx: &TxContext
 ) {
@@ -397,7 +398,7 @@ public entry fun deactivate_service(
 }
 
 /// Reactivate service (provider only)
-public entry fun reactivate_service(
+public fun reactivate_service(
     service: &mut ServiceProvider,
     ctx: &TxContext
 ) {
@@ -412,7 +413,7 @@ public entry fun reactivate_service(
 }
 
 /// Update service price (provider only)
-public entry fun update_service_price(
+public fun update_service_price(
     service: &mut ServiceProvider,
     new_price: u64,
     ctx: &TxContext
@@ -429,7 +430,7 @@ public entry fun update_service_price(
 }
 
 /// Withdraw service revenue (provider only)
-public entry fun withdraw_revenue(
+public fun withdraw_revenue(
     service: &mut ServiceProvider,
     ctx: &mut TxContext
 ) {
@@ -452,6 +453,7 @@ public entry fun withdraw_revenue(
 /// This is the equivalent of paying for an API and receiving a receipt.
 /// On Sui, the receipt is an AccessCapability object that can be used
 /// in the SAME PTB to access the service - enabling atomic pay-and-use.
+#[allow(lint(self_transfer))]
 public fun purchase_access(
     config: &mut ProtocolConfig,
     service: &mut ServiceProvider,
@@ -578,7 +580,7 @@ public fun verify_access(
 }
 
 /// Burn unused capability
-public entry fun burn_capability(cap: AccessCapability) {
+public fun burn_capability(cap: AccessCapability) {
     let AccessCapability {
         id,
         service_id: _,
@@ -633,7 +635,7 @@ public fun open_stream(
 }
 
 /// Provider records consumption from stream
-public entry fun record_stream_consumption(
+public fun record_stream_consumption(
     stream: &mut PaymentStream,
     service: &mut ServiceProvider,
     units: u64,
@@ -670,7 +672,7 @@ public entry fun record_stream_consumption(
 }
 
 /// Close stream (consumer or provider can close)
-public entry fun close_stream(
+public fun close_stream(
     stream: PaymentStream,
     ctx: &mut TxContext
 ) {
@@ -714,7 +716,7 @@ public entry fun close_stream(
 // ==================== Agent Wallet Functions ====================
 
 /// Create an AI agent wallet with spending controls
-public entry fun create_agent_wallet(
+public fun create_agent_wallet(
     config: &ProtocolConfig,
     agent_id: vector<u8>,
     spend_limit: u64,
@@ -810,7 +812,7 @@ public fun agent_purchase_access(
 }
 
 /// Fund agent wallet
-public entry fun fund_agent_wallet(
+public fun fund_agent_wallet(
     wallet: &mut AgentWallet,
     funding: Coin<SUI>,
 ) {
@@ -818,7 +820,7 @@ public entry fun fund_agent_wallet(
 }
 
 /// Withdraw from agent wallet (owner only)
-public entry fun withdraw_from_agent_wallet(
+public fun withdraw_from_agent_wallet(
     wallet: &mut AgentWallet,
     amount: u64,
     ctx: &mut TxContext
@@ -834,7 +836,7 @@ public entry fun withdraw_from_agent_wallet(
 }
 
 /// Pause/unpause agent wallet (owner only)
-public entry fun set_agent_paused(
+public fun set_agent_paused(
     wallet: &mut AgentWallet,
     paused: bool,
     ctx: &TxContext
@@ -844,7 +846,7 @@ public entry fun set_agent_paused(
 }
 
 /// Update agent spending limits (owner only)
-public entry fun update_agent_limits(
+public fun update_agent_limits(
     wallet: &mut AgentWallet,
     spend_limit: u64,
     daily_limit: u64,
@@ -858,7 +860,7 @@ public entry fun update_agent_limits(
 // ==================== Shield Transfer Functions ====================
 
 /// Initiate a shielded (hash-locked) transfer
-public entry fun initiate_shield_transfer(
+public fun initiate_shield_transfer(
     config: &ProtocolConfig,
     recipient: address,
     payment: Coin<SUI>,
@@ -894,7 +896,7 @@ public entry fun initiate_shield_transfer(
 }
 
 /// Complete shield transfer with secret
-public entry fun complete_shield_transfer(
+public fun complete_shield_transfer(
     session: ShieldSession,
     secret: vector<u8>,
     clock: &Clock,
@@ -929,7 +931,7 @@ public entry fun complete_shield_transfer(
 }
 
 /// Complete shield transfer as designated recipient (no secret needed)
-public entry fun complete_shield_transfer_recipient(
+public fun complete_shield_transfer_recipient(
     session: ShieldSession,
     clock: &Clock,
     ctx: &mut TxContext
@@ -960,7 +962,7 @@ public entry fun complete_shield_transfer_recipient(
 }
 
 /// Cancel expired shield transfer (refund to sender)
-public entry fun cancel_shield_transfer(
+public fun cancel_shield_transfer(
     session: ShieldSession,
     clock: &Clock,
     ctx: &mut TxContext
@@ -1056,7 +1058,37 @@ public fun protocol_is_paused(config: &ProtocolConfig): bool {
     config.paused
 }
 
-// ==================== Test Helpers ====================
+// ==================== Sandbox/Testing Initialization ====================
+
+/// Initialize protocol for sandbox/testing.
+/// Creates ProtocolConfig (shared) and AdminCap (transferred to sender).
+///
+/// NOTE: In production, init() runs automatically on publish.
+/// This function exists for sui-sandbox local PTB execution where
+/// init doesn't run automatically.
+#[allow(lint(self_transfer))]
+public fun initialize_protocol(ctx: &mut TxContext) {
+    let admin_cap = AdminCap {
+        id: object::new(ctx),
+    };
+
+    let config = ProtocolConfig {
+        id: object::new(ctx),
+        paused: false,
+        registration_fee: REGISTRATION_FEE,
+        fee_bps: 50, // 0.5% protocol fee
+        treasury: balance::zero(),
+        version: 1,
+    };
+
+    event::emit(ProtocolInitialized {
+        config_id: object::id(&config),
+        admin: ctx.sender(),
+    });
+
+    transfer::share_object(config);
+    transfer::transfer(admin_cap, ctx.sender());
+}
 
 #[test_only]
 public fun init_for_testing(ctx: &mut TxContext) {

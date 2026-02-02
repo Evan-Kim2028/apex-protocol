@@ -3,10 +3,11 @@ name = "apex_protocol"
 edition = "2024.beta"
 version = "0.1.0"
 
+# Note: For Seal integration, copy seal patterns locally or use local path
+# seal = { local = "../../path/to/seal/move/seal" }
+
 [dependencies]
-# DeepBook V3 - only needed for type references in apex_trading
-# Agents call DeepBook directly via PTBs, we don't wrap it
-deepbook = { git = "https://github.com/MystenLabs/deepbookv3.git", subdir = "packages/deepbook", rev = "main" }
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "mainnet-v1.63.4" }
 
 [addresses]
-dexter_payment = "0x0"
+apex_protocol = "0x0"

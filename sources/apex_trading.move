@@ -10,7 +10,7 @@
 /// IMPORTANT: This module calls DeepBook DIRECTLY. Agents can also call
 /// DeepBook directly without using this module. This is just a convenience
 /// layer showing common patterns.
-module dexter_payment::apex_trading;
+module apex_protocol::apex_trading;
 
 use sui::clock::{Self, Clock};
 use sui::coin::{Self, Coin};
@@ -18,17 +18,14 @@ use sui::balance::{Self, Balance};
 use sui::event;
 use sui::sui::SUI;
 
-use dexter_payment::apex_payments::{
+use apex_protocol::apex_payments::{
     Self,
-    ProtocolConfig,
     ServiceProvider,
     AccessCapability,
 };
 
-// We import DeepBook types but call them directly in PTBs
-// These imports are for type references only
-use deepbook::pool::Pool;
-use token::deep::DEEP;
+// Note: DeepBook types would be imported when deployed to mainnet
+// For local sandbox testing, we just define the patterns without DeepBook imports
 
 // ==================== Error Codes ====================
 const EInvalidCapability: u64 = 0;
@@ -236,7 +233,7 @@ public fun fill_intent<InputCoin, OutputCoin>(
 /// Cancel an expired or unwanted intent (creator only)
 public fun cancel_intent<InputCoin>(
     intent: SwapIntent<InputCoin>,
-    clock: &Clock,
+    _clock: &Clock,
     ctx: &mut TxContext
 ): Coin<InputCoin> {
     let SwapIntent {
@@ -332,7 +329,7 @@ public fun create_trading_service(
 }
 
 /// Create and share a trading service in one call
-public entry fun create_and_share_trading_service(
+public fun create_and_share_trading_service(
     apex_service_id: ID,
     fee_per_trade: u64,
     ctx: &mut TxContext

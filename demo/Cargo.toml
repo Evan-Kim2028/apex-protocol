@@ -1,0 +1,19 @@
+[package]
+name = "apex-demo"
+version = "0.1.0"
+edition = "2021"
+description = "APEX Protocol local PTB replay demo using sui-sandbox"
+license = "MIT"
+
+[[bin]]
+name = "apex-demo"
+path = "src/main.rs"
+
+[dependencies]
+# sui-sandbox for local Move VM execution
+sui-sandbox = { git = "https://github.com/Evan-Kim2028/sui-sandbox", package = "sui-sandbox-core" }
+
+# Core dependencies
+anyhow = "1.0"
+bcs = "0.1"
+move-core-types = "0.0.4"

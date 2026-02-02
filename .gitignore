@@ -1,8 +1,12 @@
 # Build artifacts
 build/
+target/
+demo/target/
 
-# Sui
+# Sui Move
 Move.lock
+*.mv
+*.mvir
 
 # IDE
 .idea/
