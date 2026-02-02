@@ -101,12 +101,18 @@ sui move test
 
 ### Run the Local PTB Demo
 
-The `demo/` directory contains a Rust application that uses [sui-sandbox](https://github.com/Evan-Kim2028/sui-sandbox) to execute APEX PTBs locally in the real Move VM - no testnet deployment required.
+The `demo/` directory is a **local testing environment** that executes APEX contracts in a real Move VM without deploying to any blockchain. It uses [sui-sandbox](https://github.com/Evan-Kim2028/sui-sandbox) to run the exact same bytecode that would execute on Sui mainnet - instant feedback, no gas fees.
 
 ```bash
+# First, build the Move contracts
+sui move build
+
+# Then run the demo
 cd demo
 cargo run
 ```
+
+> **New to the demo?** Read the comprehensive [Demo Guide](demo/DEMO.md) for architecture details, code walkthrough, and troubleshooting.
 
 **5 Comprehensive Demos:**
 
@@ -148,6 +154,7 @@ apex-protocol/
 │   └── apex_tests.move          # Local Move VM tests
 ├── demo/                        # Local PTB replay demo (5 demos)
 │   ├── Cargo.toml               # Imports sui-sandbox
+│   ├── DEMO.md                  # Comprehensive demo guide
 │   └── src/main.rs              # Full protocol flow demo
 ├── docs/
 │   ├── APEX_ARCHITECTURE.md     # Detailed architecture docs
@@ -353,6 +360,7 @@ The demo uses [sui-sandbox](https://github.com/Evan-Kim2028/sui-sandbox) for loc
 
 ## Documentation
 
+- **[Demo Guide](demo/DEMO.md)** - How the local demo works, code walkthrough, troubleshooting
 - [Design Decisions](docs/DESIGN_DECISIONS.md) - Rationale, tradeoffs, competitive analysis, and evolution roadmap
 - [PTB Examples](docs/PTB_EXAMPLES.md) - Detailed input/output examples
 - [Architecture](docs/APEX_ARCHITECTURE.md) - System diagrams
