@@ -17,6 +17,7 @@ use sui::coin::{Self, Coin};
 use sui::balance::{Self, Balance};
 use sui::event;
 use sui::hash;
+use sui::bcs;
 use sui::sui::SUI;
 
 // ==================== Error Codes ====================
@@ -1056,6 +1057,576 @@ public fun service_total_served(service: &ServiceProvider): u64 {
 
 public fun protocol_is_paused(config: &ProtocolConfig): bool {
     config.paused
+}
+
+// ==================== Delegated Agent Authorization ====================
+
+/// Authorization from human owner to agent address
+/// Allows agents to spend on behalf of owner with restrictions
+public struct AgentAuthorization has key, store {
+    id: UID,
+    /// Human owner who created this authorization
+    owner: address,
+    /// Authorized agent address
+    agent: address,
+    /// Allowed services (empty = all services allowed)
+    allowed_services: vector<ID>,
+    /// Max spend per transaction (0 = unlimited)
+    spend_limit_per_tx: u64,
+    /// Max daily spend (0 = unlimited)
+    daily_limit: u64,
+    /// Amount spent today
+    daily_spent: u64,
+    /// Day tracking (epoch-based)
+    last_reset_epoch: u64,
+    /// Expiry timestamp (0 = never)
+    expires_at: u64,
+    /// Emergency pause
+    paused: bool,
+}
+
+public struct AuthorizationCreated has copy, drop {
+    auth_id: ID,
+    owner: address,
+    agent: address,
+    daily_limit: u64,
+}
+
+public struct AuthorizationRevoked has copy, drop {
+    auth_id: ID,
+    owner: address,
+}
+
+/// Create authorization for an agent to spend on owner's behalf
+public fun create_authorization(
+    agent: address,
+    allowed_services: vector<ID>,
+    spend_limit_per_tx: u64,
+    daily_limit: u64,
+    duration_ms: u64,
+    clock: &Clock,
+    ctx: &mut TxContext
+): AgentAuthorization {
+    let expires_at = if (duration_ms == 0) {
+        0
+    } else {
+        clock::timestamp_ms(clock) + duration_ms
+    };
+
+    let auth = AgentAuthorization {
+        id: object::new(ctx),
+        owner: ctx.sender(),
+        agent,
+        allowed_services,
+        spend_limit_per_tx,
+        daily_limit,
+        daily_spent: 0,
+        last_reset_epoch: ctx.epoch(),
+        expires_at,
+        paused: false,
+    };
+
+    event::emit(AuthorizationCreated {
+        auth_id: object::id(&auth),
+        owner: ctx.sender(),
+        agent,
+        daily_limit,
+    });
+
+    auth
+}
+
+/// Agent purchases access using authorization
+#[allow(lint(self_transfer))]
+public fun authorized_purchase(
+    auth: &mut AgentAuthorization,
+    config: &mut ProtocolConfig,
+    service: &mut ServiceProvider,
+    payment: Coin<SUI>,
+    units: u64,
+    duration_ms: u64,
+    rate_limit: u64,
+    clock: &Clock,
+    ctx: &mut TxContext
+): AccessCapability {
+    // Verify caller is authorized agent
+    assert!(ctx.sender() == auth.agent, EUnauthorized);
+
+    // Verify not paused
+    assert!(!auth.paused, EUnauthorized);
+
+    // Verify not expired
+    if (auth.expires_at > 0) {
+        assert!(clock::timestamp_ms(clock) < auth.expires_at, EExpired);
+    };
+
+    // Verify service is allowed (empty = all allowed)
+    if (!vector::is_empty(&auth.allowed_services)) {
+        assert!(vector::contains(&auth.allowed_services, &object::id(service)), EUnauthorized);
+    };
+
+    // Reset daily limit if new epoch
+    let current_epoch = ctx.epoch();
+    if (current_epoch > auth.last_reset_epoch) {
+        auth.daily_spent = 0;
+        auth.last_reset_epoch = current_epoch;
+    };
+
+    let cost = coin::value(&payment);
+
+    // Verify spend limits
+    if (auth.spend_limit_per_tx > 0) {
+        assert!(cost <= auth.spend_limit_per_tx, EExceededLimit);
+    };
+    if (auth.daily_limit > 0) {
+        assert!(auth.daily_spent + cost <= auth.daily_limit, EExceededLimit);
+    };
+
+    auth.daily_spent = auth.daily_spent + cost;
+
+    // Delegate to standard purchase
+    purchase_access(config, service, payment, units, duration_ms, rate_limit, clock, ctx)
+}
+
+/// Owner pauses authorization
+public fun pause_authorization(auth: &mut AgentAuthorization, ctx: &TxContext) {
+    assert!(ctx.sender() == auth.owner, EUnauthorized);
+    auth.paused = true;
+}
+
+/// Owner unpauses authorization
+public fun unpause_authorization(auth: &mut AgentAuthorization, ctx: &TxContext) {
+    assert!(ctx.sender() == auth.owner, EUnauthorized);
+    auth.paused = false;
+}
+
+/// Owner revokes (destroys) authorization
+public fun revoke_authorization(auth: AgentAuthorization, ctx: &TxContext) {
+    assert!(ctx.sender() == auth.owner, EUnauthorized);
+
+    event::emit(AuthorizationRevoked {
+        auth_id: object::id(&auth),
+        owner: auth.owner,
+    });
+
+    let AgentAuthorization {
+        id,
+        owner: _,
+        agent: _,
+        allowed_services: _,
+        spend_limit_per_tx: _,
+        daily_limit: _,
+        daily_spent: _,
+        last_reset_epoch: _,
+        expires_at: _,
+        paused: _,
+    } = auth;
+    object::delete(id);
+}
+
+/// Owner updates authorization limits
+public fun update_authorization_limits(
+    auth: &mut AgentAuthorization,
+    spend_limit_per_tx: u64,
+    daily_limit: u64,
+    ctx: &TxContext
+) {
+    assert!(ctx.sender() == auth.owner, EUnauthorized);
+    auth.spend_limit_per_tx = spend_limit_per_tx;
+    auth.daily_limit = daily_limit;
+}
+
+/// Owner adds allowed service
+public fun add_allowed_service(
+    auth: &mut AgentAuthorization,
+    service_id: ID,
+    ctx: &TxContext
+) {
+    assert!(ctx.sender() == auth.owner, EUnauthorized);
+    if (!vector::contains(&auth.allowed_services, &service_id)) {
+        vector::push_back(&mut auth.allowed_services, service_id);
+    };
+}
+
+/// Owner removes allowed service
+public fun remove_allowed_service(
+    auth: &mut AgentAuthorization,
+    service_id: ID,
+    ctx: &TxContext
+) {
+    assert!(ctx.sender() == auth.owner, EUnauthorized);
+    let (found, idx) = vector::index_of(&auth.allowed_services, &service_id);
+    if (found) {
+        vector::remove(&mut auth.allowed_services, idx);
+    };
+}
+
+// ==================== Nautilus Verified Metering ====================
+
+/// Registered Nautilus enclave for verified consumption metering
+public struct TrustedMeter has key, store {
+    id: UID,
+    /// 32-byte Ed25519 public key of the enclave
+    enclave_pubkey: vector<u8>,
+    /// PCR values (enclave code measurement)
+    pcr_values: vector<u8>,
+    /// Who registered this meter
+    registered_by: address,
+    /// Description
+    description: vector<u8>,
+    /// Active status
+    active: bool,
+}
+
+public struct MeterRegistered has copy, drop {
+    meter_id: ID,
+    enclave_pubkey: vector<u8>,
+    registered_by: address,
+}
+
+public struct VerifiedConsumption has copy, drop {
+    stream_id: ID,
+    meter_id: ID,
+    units: u64,
+    cost: u64,
+}
+
+/// Admin registers a trusted metering enclave
+public fun register_meter(
+    _admin: &AdminCap,
+    enclave_pubkey: vector<u8>,
+    pcr_values: vector<u8>,
+    description: vector<u8>,
+    ctx: &mut TxContext
+): TrustedMeter {
+    // Validate pubkey length (Ed25519 = 32 bytes)
+    assert!(vector::length(&enclave_pubkey) == 32, EInvalidInput);
+
+    let meter = TrustedMeter {
+        id: object::new(ctx),
+        enclave_pubkey,
+        pcr_values,
+        registered_by: ctx.sender(),
+        description,
+        active: true,
+    };
+
+    event::emit(MeterRegistered {
+        meter_id: object::id(&meter),
+        enclave_pubkey: meter.enclave_pubkey,
+        registered_by: ctx.sender(),
+    });
+
+    meter
+}
+
+/// Admin deactivates a meter
+public fun deactivate_meter(
+    _admin: &AdminCap,
+    meter: &mut TrustedMeter,
+) {
+    meter.active = false;
+}
+
+/// Consume stream units with enclave-verified usage report
+/// Uses sui::ed25519::ed25519_verify for signature verification
+public fun record_verified_consumption(
+    stream: &mut PaymentStream,
+    service: &mut ServiceProvider,
+    meter: &TrustedMeter,
+    units: u64,
+    timestamp: u64,
+    signature: vector<u8>,
+    clock: &Clock,
+    _ctx: &mut TxContext
+) {
+    use sui::ed25519;
+
+    // Verify meter is active
+    assert!(meter.active, EUnauthorized);
+
+    // Verify stream matches service
+    assert!(stream.service_id == object::id(service), EInvalidStream);
+
+    // Build the message that was signed: stream_id || units || timestamp
+    let mut message = object::id(stream).to_bytes();
+    vector::append(&mut message, bcs::to_bytes(&units));
+    vector::append(&mut message, bcs::to_bytes(&timestamp));
+
+    // Verify Ed25519 signature from enclave
+    let is_valid = ed25519::ed25519_verify(
+        &signature,
+        &meter.enclave_pubkey,
+        &message
+    );
+    assert!(is_valid, EUnauthorized);
+
+    // Verify timestamp is recent (within 5 minutes)
+    let now = clock::timestamp_ms(clock);
+    assert!(now >= timestamp && now - timestamp < 300_000, EExpired);
+
+    // Calculate cost and verify sufficient escrow
+    let cost = safe_mul(units, stream.unit_price);
+    assert!(balance::value(&stream.escrow) >= cost, EInsufficientBalance);
+    assert!(stream.total_consumed + units <= stream.max_units, EExceededLimit);
+
+    // Pull payment from escrow to provider
+    let payment = balance::split(&mut stream.escrow, cost);
+    balance::join(&mut service.revenue, payment);
+
+    stream.total_consumed = stream.total_consumed + units;
+    stream.last_activity = now;
+
+    event::emit(VerifiedConsumption {
+        stream_id: object::id(stream),
+        meter_id: object::id(meter),
+        units,
+        cost,
+    });
+}
+
+// View functions for new types
+public fun authorization_owner(auth: &AgentAuthorization): address {
+    auth.owner
+}
+
+public fun authorization_agent(auth: &AgentAuthorization): address {
+    auth.agent
+}
+
+public fun authorization_daily_remaining(auth: &AgentAuthorization): u64 {
+    if (auth.daily_limit == 0) {
+        // Unlimited
+        18446744073709551615 // u64::MAX
+    } else if (auth.daily_spent >= auth.daily_limit) {
+        0
+    } else {
+        auth.daily_limit - auth.daily_spent
+    }
+}
+
+public fun authorization_is_paused(auth: &AgentAuthorization): bool {
+    auth.paused
+}
+
+public fun meter_pubkey(meter: &TrustedMeter): vector<u8> {
+    meter.enclave_pubkey
+}
+
+public fun meter_is_active(meter: &TrustedMeter): bool {
+    meter.active
+}
+
+// ==================== Service Discovery Registry ====================
+
+/// Metadata for service discovery
+public struct ServiceMetadata has store, copy, drop {
+    /// Service name
+    name: vector<u8>,
+    /// Description
+    description: vector<u8>,
+    /// Category (e.g., "oracle", "ai", "defi", "storage")
+    category: vector<u8>,
+    /// Walrus blob ID for Seal-encrypted endpoint details
+    endpoint_blob_id: vector<u8>,
+    /// Current unit price (cached from ServiceProvider)
+    unit_price: u64,
+    /// Total usage count (cached)
+    total_served: u64,
+    /// Registration timestamp
+    registered_at: u64,
+}
+
+/// Registry for service discovery (shared object)
+public struct ServiceRegistry has key {
+    id: UID,
+    /// Service ID -> Metadata
+    services: vector<RegistryEntry>,
+    /// Admin who can curate featured list
+    admin: address,
+}
+
+/// Entry in the registry
+public struct RegistryEntry has store, copy, drop {
+    service_id: ID,
+    metadata: ServiceMetadata,
+    featured: bool,
+}
+
+public struct RegistryCreated has copy, drop {
+    registry_id: ID,
+    admin: address,
+}
+
+public struct ServiceListed has copy, drop {
+    registry_id: ID,
+    service_id: ID,
+    category: vector<u8>,
+}
+
+public struct ServiceDelisted has copy, drop {
+    registry_id: ID,
+    service_id: ID,
+}
+
+/// Initialize service registry (admin creates this)
+public fun create_registry(
+    _admin: &AdminCap,
+    ctx: &mut TxContext
+) {
+    let registry = ServiceRegistry {
+        id: object::new(ctx),
+        services: vector::empty(),
+        admin: ctx.sender(),
+    };
+
+    event::emit(RegistryCreated {
+        registry_id: object::id(&registry),
+        admin: ctx.sender(),
+    });
+
+    transfer::share_object(registry);
+}
+
+/// Service owner lists their service in registry
+public fun list_service(
+    registry: &mut ServiceRegistry,
+    service: &ServiceProvider,
+    category: vector<u8>,
+    endpoint_blob_id: vector<u8>,
+    clock: &Clock,
+    ctx: &TxContext
+) {
+    // Only service owner can list
+    assert!(ctx.sender() == service.provider, EUnauthorized);
+    assert!(service.active, EServiceInactive);
+
+    // Check not already listed
+    let service_id = object::id(service);
+    let mut i = 0;
+    let len = vector::length(&registry.services);
+    while (i < len) {
+        let entry = vector::borrow(&registry.services, i);
+        assert!(entry.service_id != service_id, EInvalidInput);
+        i = i + 1;
+    };
+
+    let metadata = ServiceMetadata {
+        name: service.name,
+        description: service.description,
+        category,
+        endpoint_blob_id,
+        unit_price: service.price_per_unit,
+        total_served: service.total_served,
+        registered_at: clock::timestamp_ms(clock),
+    };
+
+    let entry = RegistryEntry {
+        service_id,
+        metadata,
+        featured: false,
+    };
+
+    vector::push_back(&mut registry.services, entry);
+
+    event::emit(ServiceListed {
+        registry_id: object::id(registry),
+        service_id,
+        category,
+    });
+}
+
+/// Service owner updates their listing
+public fun update_listing(
+    registry: &mut ServiceRegistry,
+    service: &ServiceProvider,
+    category: vector<u8>,
+    endpoint_blob_id: vector<u8>,
+    ctx: &TxContext
+) {
+    assert!(ctx.sender() == service.provider, EUnauthorized);
+
+    let service_id = object::id(service);
+    let mut i = 0;
+    let len = vector::length(&registry.services);
+    while (i < len) {
+        let entry = vector::borrow_mut(&mut registry.services, i);
+        if (entry.service_id == service_id) {
+            entry.metadata.category = category;
+            entry.metadata.endpoint_blob_id = endpoint_blob_id;
+            entry.metadata.unit_price = service.price_per_unit;
+            entry.metadata.total_served = service.total_served;
+            return
+        };
+        i = i + 1;
+    };
+
+    // Not found
+    abort EInvalidInput
+}
+
+/// Service owner delists their service
+public fun delist_service(
+    registry: &mut ServiceRegistry,
+    service: &ServiceProvider,
+    ctx: &TxContext
+) {
+    assert!(ctx.sender() == service.provider, EUnauthorized);
+
+    let service_id = object::id(service);
+    let mut i = 0;
+    let len = vector::length(&registry.services);
+    while (i < len) {
+        let entry = vector::borrow(&registry.services, i);
+        if (entry.service_id == service_id) {
+            vector::remove(&mut registry.services, i);
+
+            event::emit(ServiceDelisted {
+                registry_id: object::id(registry),
+                service_id,
+            });
+            return
+        };
+        i = i + 1;
+    };
+}
+
+/// Admin sets featured status
+public fun set_featured(
+    registry: &mut ServiceRegistry,
+    service_id: ID,
+    featured: bool,
+    ctx: &TxContext
+) {
+    assert!(ctx.sender() == registry.admin, EUnauthorized);
+
+    let mut i = 0;
+    let len = vector::length(&registry.services);
+    while (i < len) {
+        let entry = vector::borrow_mut(&mut registry.services, i);
+        if (entry.service_id == service_id) {
+            entry.featured = featured;
+            return
+        };
+        i = i + 1;
+    };
+}
+
+/// Get number of services in registry
+public fun registry_count(registry: &ServiceRegistry): u64 {
+    vector::length(&registry.services)
+}
+
+/// Get service entry by index
+public fun registry_get(registry: &ServiceRegistry, idx: u64): (ID, vector<u8>, vector<u8>, u64, bool) {
+    let entry = vector::borrow(&registry.services, idx);
+    (
+        entry.service_id,
+        entry.metadata.name,
+        entry.metadata.category,
+        entry.metadata.unit_price,
+        entry.featured
+    )
 }
 
 // ==================== Sandbox/Testing Initialization ====================

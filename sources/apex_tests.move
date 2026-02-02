@@ -3,7 +3,7 @@
 /// These tests run via `sui move test` and execute in the local Move VM.
 /// They verify all protocol functionality works correctly before testnet deployment.
 #[test_only]
-module dexter_payment::apex_tests;
+module apex_protocol::apex_tests;
 
 use sui::test_scenario::{Self as ts, Scenario};
 use sui::test_utils;
@@ -11,7 +11,7 @@ use sui::clock::{Self, Clock};
 use sui::coin::{Self, Coin};
 use sui::sui::SUI;
 
-use dexter_payment::apex_payments::{
+use apex_protocol::apex_payments::{
     Self,
     AdminCap,
     ProtocolConfig,
@@ -20,9 +20,12 @@ use dexter_payment::apex_payments::{
     PaymentStream,
     AgentWallet,
     ShieldSession,
+    AgentAuthorization,
+    TrustedMeter,
+    ServiceRegistry,
 };
 
-use dexter_payment::apex_trading::{
+use apex_protocol::apex_trading::{
     Self,
     SwapIntent,
     TradingService,
@@ -35,6 +38,7 @@ const PROVIDER: address = @0x1;
 const AGENT: address = @0x2;
 const EXECUTOR: address = @0x3;
 const RECIPIENT: address = @0x4;
+const OWNER: address = @0x5;
 
 // ==================== Test Constants ====================
 const MIST_PER_SUI: u64 = 1_000_000_000;
@@ -1107,6 +1111,489 @@ fun test_register_while_paused() {
         );
 
         ts::return_shared(config);
+    };
+
+    ts::end(scenario);
+}
+
+// ==================== Agent Authorization Tests ====================
+
+#[test]
+fun test_create_authorization() {
+    let mut scenario = ts::begin(OWNER);
+
+    // Owner creates authorization for agent
+    ts::next_tx(&mut scenario, OWNER);
+    {
+        let mut clock = clock::create_for_testing(ts::ctx(&mut scenario));
+        clock::set_for_testing(&mut clock, 1000);
+
+        let auth = apex_payments::create_authorization(
+            AGENT, // authorized agent
+            vector::empty(), // all services allowed
+            100_000_000, // 0.1 SUI spend limit per tx
+            1_000_000_000, // 1 SUI daily limit
+            86400_000, // 24 hour duration
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        // Verify authorization
+        assert!(apex_payments::authorization_owner(&auth) == OWNER, 0);
+        assert!(apex_payments::authorization_agent(&auth) == AGENT, 1);
+        assert!(!apex_payments::authorization_is_paused(&auth), 2);
+
+        transfer::public_transfer(auth, OWNER);
+        clock::destroy_for_testing(clock);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun test_authorized_purchase() {
+    let mut scenario = ts::begin(ADMIN);
+    setup_protocol(&mut scenario);
+
+    // Register service
+    ts::next_tx(&mut scenario, PROVIDER);
+    {
+        let mut config = ts::take_shared<ProtocolConfig>(&scenario);
+        apex_payments::register_service(
+            &mut config,
+            b"API Service",
+            b"Test service",
+            10_000_000, // 0.01 SUI per unit
+            mint_sui(REGISTRATION_FEE, ts::ctx(&mut scenario)),
+            ts::ctx(&mut scenario)
+        );
+        ts::return_shared(config);
+    };
+
+    // Owner creates authorization for agent
+    ts::next_tx(&mut scenario, OWNER);
+    {
+        let mut clock = clock::create_for_testing(ts::ctx(&mut scenario));
+        clock::set_for_testing(&mut clock, 1000);
+
+        let auth = apex_payments::create_authorization(
+            AGENT,
+            vector::empty(), // all services allowed
+            500_000_000, // 0.5 SUI spend limit per tx
+            1_000_000_000, // 1 SUI daily limit
+            86400_000, // 24 hours
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        transfer::public_transfer(auth, AGENT);
+        clock::destroy_for_testing(clock);
+    };
+
+    // Agent uses authorization to purchase access
+    ts::next_tx(&mut scenario, AGENT);
+    {
+        let mut config = ts::take_shared<ProtocolConfig>(&scenario);
+        let mut service = ts::take_shared<ServiceProvider>(&scenario);
+        let mut auth = ts::take_from_sender<AgentAuthorization>(&scenario);
+        let mut clock = clock::create_for_testing(ts::ctx(&mut scenario));
+        clock::set_for_testing(&mut clock, 2000);
+
+        let payment = mint_sui(100_000_000, ts::ctx(&mut scenario)); // 0.1 SUI for 10 units
+
+        let capability = apex_payments::authorized_purchase(
+            &mut auth,
+            &mut config,
+            &mut service,
+            payment,
+            10, // 10 units
+            3600_000, // 1 hour
+            0, // no rate limit
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        assert!(apex_payments::capability_remaining(&capability) == 10, 0);
+
+        transfer::public_transfer(capability, AGENT);
+        clock::destroy_for_testing(clock);
+        ts::return_to_sender(&scenario, auth);
+        ts::return_shared(service);
+        ts::return_shared(config);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+#[expected_failure(abort_code = apex_payments::EExceededLimit)]
+fun test_authorized_purchase_exceeds_limit() {
+    let mut scenario = ts::begin(ADMIN);
+    setup_protocol(&mut scenario);
+
+    // Register service
+    ts::next_tx(&mut scenario, PROVIDER);
+    {
+        let mut config = ts::take_shared<ProtocolConfig>(&scenario);
+        apex_payments::register_service(
+            &mut config,
+            b"API",
+            b"Test",
+            10_000_000,
+            mint_sui(REGISTRATION_FEE, ts::ctx(&mut scenario)),
+            ts::ctx(&mut scenario)
+        );
+        ts::return_shared(config);
+    };
+
+    // Owner creates authorization with low spend limit
+    ts::next_tx(&mut scenario, OWNER);
+    {
+        let mut clock = clock::create_for_testing(ts::ctx(&mut scenario));
+        clock::set_for_testing(&mut clock, 1000);
+
+        let auth = apex_payments::create_authorization(
+            AGENT,
+            vector::empty(),
+            50_000_000, // Only 0.05 SUI spend limit per tx
+            1_000_000_000,
+            86400_000,
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        transfer::public_transfer(auth, AGENT);
+        clock::destroy_for_testing(clock);
+    };
+
+    // Agent tries to purchase more than limit
+    ts::next_tx(&mut scenario, AGENT);
+    {
+        let mut config = ts::take_shared<ProtocolConfig>(&scenario);
+        let mut service = ts::take_shared<ServiceProvider>(&scenario);
+        let mut auth = ts::take_from_sender<AgentAuthorization>(&scenario);
+        let mut clock = clock::create_for_testing(ts::ctx(&mut scenario));
+        clock::set_for_testing(&mut clock, 2000);
+
+        // Try to pay 0.1 SUI (exceeds 0.05 limit)
+        let payment = mint_sui(100_000_000, ts::ctx(&mut scenario));
+
+        let capability = apex_payments::authorized_purchase(
+            &mut auth,
+            &mut config,
+            &mut service,
+            payment,
+            10, // 10 units = 0.1 SUI
+            3600_000,
+            0,
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        transfer::public_transfer(capability, AGENT);
+        clock::destroy_for_testing(clock);
+        ts::return_to_sender(&scenario, auth);
+        ts::return_shared(service);
+        ts::return_shared(config);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun test_pause_and_revoke_authorization() {
+    let mut scenario = ts::begin(OWNER);
+
+    // Owner creates authorization
+    ts::next_tx(&mut scenario, OWNER);
+    {
+        let mut clock = clock::create_for_testing(ts::ctx(&mut scenario));
+        clock::set_for_testing(&mut clock, 1000);
+
+        let auth = apex_payments::create_authorization(
+            AGENT,
+            vector::empty(),
+            100_000_000,
+            1_000_000_000,
+            86400_000,
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        transfer::public_transfer(auth, OWNER);
+        clock::destroy_for_testing(clock);
+    };
+
+    // Owner pauses authorization
+    ts::next_tx(&mut scenario, OWNER);
+    {
+        let mut auth = ts::take_from_sender<AgentAuthorization>(&scenario);
+
+        apex_payments::pause_authorization(&mut auth, ts::ctx(&mut scenario));
+        assert!(apex_payments::authorization_is_paused(&auth), 0);
+
+        // Owner unpauses
+        apex_payments::unpause_authorization(&mut auth, ts::ctx(&mut scenario));
+        assert!(!apex_payments::authorization_is_paused(&auth), 1);
+
+        ts::return_to_sender(&scenario, auth);
+    };
+
+    // Owner revokes authorization
+    ts::next_tx(&mut scenario, OWNER);
+    {
+        let auth = ts::take_from_sender<AgentAuthorization>(&scenario);
+        apex_payments::revoke_authorization(auth, ts::ctx(&mut scenario));
+    };
+
+    ts::end(scenario);
+}
+
+// ==================== Trusted Meter Tests ====================
+
+#[test]
+fun test_register_meter() {
+    let mut scenario = ts::begin(ADMIN);
+    setup_protocol(&mut scenario);
+
+    // Admin registers a trusted meter
+    ts::next_tx(&mut scenario, ADMIN);
+    {
+        let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+
+        // 32-byte Ed25519 pubkey (simulated)
+        let enclave_pubkey = x"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let pcr_values = b"pcr0:abc123";
+
+        let meter = apex_payments::register_meter(
+            &admin_cap,
+            enclave_pubkey,
+            pcr_values,
+            b"Test Nautilus Meter",
+            ts::ctx(&mut scenario)
+        );
+
+        assert!(apex_payments::meter_is_active(&meter), 0);
+        assert!(apex_payments::meter_pubkey(&meter) == enclave_pubkey, 1);
+
+        transfer::public_transfer(meter, ADMIN);
+        ts::return_to_sender(&scenario, admin_cap);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun test_deactivate_meter() {
+    let mut scenario = ts::begin(ADMIN);
+    setup_protocol(&mut scenario);
+
+    // Register meter
+    ts::next_tx(&mut scenario, ADMIN);
+    {
+        let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+        let enclave_pubkey = x"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+        let meter = apex_payments::register_meter(
+            &admin_cap,
+            enclave_pubkey,
+            b"pcr0:abc",
+            b"Test Meter",
+            ts::ctx(&mut scenario)
+        );
+
+        transfer::public_transfer(meter, ADMIN);
+        ts::return_to_sender(&scenario, admin_cap);
+    };
+
+    // Deactivate meter
+    ts::next_tx(&mut scenario, ADMIN);
+    {
+        let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+        let mut meter = ts::take_from_sender<TrustedMeter>(&scenario);
+
+        apex_payments::deactivate_meter(&admin_cap, &mut meter);
+        assert!(!apex_payments::meter_is_active(&meter), 0);
+
+        ts::return_to_sender(&scenario, meter);
+        ts::return_to_sender(&scenario, admin_cap);
+    };
+
+    ts::end(scenario);
+}
+
+// ==================== Service Registry Tests ====================
+
+#[test]
+fun test_create_registry() {
+    let mut scenario = ts::begin(ADMIN);
+    setup_protocol(&mut scenario);
+
+    // Admin creates registry
+    ts::next_tx(&mut scenario, ADMIN);
+    {
+        let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+
+        apex_payments::create_registry(&admin_cap, ts::ctx(&mut scenario));
+
+        ts::return_to_sender(&scenario, admin_cap);
+    };
+
+    // Verify registry was created
+    ts::next_tx(&mut scenario, ADMIN);
+    {
+        let registry = ts::take_shared<ServiceRegistry>(&scenario);
+        assert!(apex_payments::registry_count(&registry) == 0, 0);
+        ts::return_shared(registry);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun test_list_and_delist_service() {
+    let mut scenario = ts::begin(ADMIN);
+    setup_protocol(&mut scenario);
+
+    // Register a service
+    ts::next_tx(&mut scenario, PROVIDER);
+    {
+        let mut config = ts::take_shared<ProtocolConfig>(&scenario);
+        apex_payments::register_service(
+            &mut config,
+            b"Oracle Service",
+            b"Price feed oracle",
+            5_000_000,
+            mint_sui(REGISTRATION_FEE, ts::ctx(&mut scenario)),
+            ts::ctx(&mut scenario)
+        );
+        ts::return_shared(config);
+    };
+
+    // Admin creates registry
+    ts::next_tx(&mut scenario, ADMIN);
+    {
+        let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+        apex_payments::create_registry(&admin_cap, ts::ctx(&mut scenario));
+        ts::return_to_sender(&scenario, admin_cap);
+    };
+
+    // Provider lists service in registry
+    ts::next_tx(&mut scenario, PROVIDER);
+    {
+        let service = ts::take_shared<ServiceProvider>(&scenario);
+        let mut registry = ts::take_shared<ServiceRegistry>(&scenario);
+        let mut clock = clock::create_for_testing(ts::ctx(&mut scenario));
+        clock::set_for_testing(&mut clock, 1000);
+
+        apex_payments::list_service(
+            &mut registry,
+            &service,
+            b"oracle",
+            b"walrus_blob_id_123",
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        assert!(apex_payments::registry_count(&registry) == 1, 0);
+
+        clock::destroy_for_testing(clock);
+        ts::return_shared(registry);
+        ts::return_shared(service);
+    };
+
+    // Provider delists service
+    ts::next_tx(&mut scenario, PROVIDER);
+    {
+        let service = ts::take_shared<ServiceProvider>(&scenario);
+        let mut registry = ts::take_shared<ServiceRegistry>(&scenario);
+
+        apex_payments::delist_service(
+            &mut registry,
+            &service,
+            ts::ctx(&mut scenario)
+        );
+
+        assert!(apex_payments::registry_count(&registry) == 0, 0);
+
+        ts::return_shared(registry);
+        ts::return_shared(service);
+    };
+
+    ts::end(scenario);
+}
+
+#[test]
+fun test_set_featured_service() {
+    let mut scenario = ts::begin(ADMIN);
+    setup_protocol(&mut scenario);
+
+    // Register a service
+    ts::next_tx(&mut scenario, PROVIDER);
+    {
+        let mut config = ts::take_shared<ProtocolConfig>(&scenario);
+        apex_payments::register_service(
+            &mut config,
+            b"Featured Service",
+            b"A great service",
+            10_000_000,
+            mint_sui(REGISTRATION_FEE, ts::ctx(&mut scenario)),
+            ts::ctx(&mut scenario)
+        );
+        ts::return_shared(config);
+    };
+
+    // Admin creates registry
+    ts::next_tx(&mut scenario, ADMIN);
+    {
+        let admin_cap = ts::take_from_sender<AdminCap>(&scenario);
+        apex_payments::create_registry(&admin_cap, ts::ctx(&mut scenario));
+        ts::return_to_sender(&scenario, admin_cap);
+    };
+
+    // Provider lists service
+    ts::next_tx(&mut scenario, PROVIDER);
+    {
+        let service = ts::take_shared<ServiceProvider>(&scenario);
+        let mut registry = ts::take_shared<ServiceRegistry>(&scenario);
+        let mut clock = clock::create_for_testing(ts::ctx(&mut scenario));
+        clock::set_for_testing(&mut clock, 1000);
+
+        apex_payments::list_service(
+            &mut registry,
+            &service,
+            b"defi",
+            b"blob_id",
+            &clock,
+            ts::ctx(&mut scenario)
+        );
+
+        clock::destroy_for_testing(clock);
+        ts::return_shared(registry);
+        ts::return_shared(service);
+    };
+
+    // Admin sets featured status
+    ts::next_tx(&mut scenario, ADMIN);
+    {
+        let mut registry = ts::take_shared<ServiceRegistry>(&scenario);
+        let service = ts::take_shared<ServiceProvider>(&scenario);
+        let service_id = object::id(&service);
+
+        apex_payments::set_featured(
+            &mut registry,
+            service_id,
+            true,
+            ts::ctx(&mut scenario)
+        );
+
+        // Verify featured status via registry_get
+        let (id, _name, _category, _price, featured) = apex_payments::registry_get(&registry, 0);
+        assert!(id == service_id, 0);
+        assert!(featured == true, 1);
+
+        ts::return_shared(service);
+        ts::return_shared(registry);
     };
 
     ts::end(scenario);
