@@ -100,6 +100,75 @@ Client                              Sui Blockchain
 └─────────────────────────────────────────────────────────────┘
 ```
 
+## Quick Start
+
+### Prerequisites
+
+- [Sui CLI](https://docs.sui.io/guides/developer/getting-started/sui-install) (v1.63.4 or later)
+- [Rust](https://rustup.rs/) (for running the demo)
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/Evan-Kim2028/apex-protocol.git
+cd apex-protocol
+
+# Build Move contracts
+sui move build
+
+# Run tests
+sui move test
+```
+
+### Run the Local PTB Demo
+
+The `demo/` directory contains a Rust application that uses [sui-sandbox](https://github.com/Evan-Kim2028/sui-sandbox) to execute APEX PTBs locally in the real Move VM - no testnet deployment required.
+
+```bash
+cd demo
+cargo run
+```
+
+This demonstrates the full protocol flow:
+1. Deploy APEX contracts locally
+2. Initialize protocol (creates ProtocolConfig + AdminCap)
+3. Register a service provider
+4. Agent purchases AccessCapability
+5. Agent uses access (consumes units)
+
+### Deploy to Testnet
+
+```bash
+# Switch to testnet
+sui client switch --env testnet
+
+# Get test tokens
+sui client faucet
+
+# Deploy
+sui client publish --gas-budget 500000000
+```
+
+## Project Structure
+
+```
+apex-protocol/
+├── Move.toml                    # Move package config
+├── sources/
+│   ├── apex_payments.move       # Core payment infrastructure
+│   ├── apex_trading.move        # Trading patterns & intents
+│   ├── apex_seal.move           # Encrypted access control (Seal integration)
+│   ├── apex_sponsor.move        # Gas sponsorship infrastructure
+│   └── apex_tests.move          # Local Move VM tests
+├── demo/                        # Local PTB replay demo
+│   ├── Cargo.toml               # Imports sui-sandbox
+│   └── src/main.rs              # Full protocol flow demo
+├── docs/
+│   └── APEX_ARCHITECTURE.md     # Detailed architecture docs
+└── README.md
+```
+
 ## PTB Examples (Verified via Local Move VM)
 
 These examples show expected PTB structure and outputs. **All behaviors are verified by the local Move VM tests** (`sui move test`). Replace object IDs with real values after deployment.
@@ -467,18 +536,6 @@ On Sui, access is an **object you hold**:
 - Compose it in PTBs with other operations
 - Burn it when done
 
-## Project Structure
-
-```
-apex-protocol/
-├── Move.toml
-├── sources/
-│   ├── apex_payments.move    # Core payment infrastructure
-│   ├── apex_trading.move     # Trading patterns & intents
-│   └── apex_tests.move       # Local Move VM tests
-└── README.md
-```
-
 ## Local Move VM Testing
 
 All protocol functionality is verified through **local Move VM execution** via `sui move test`. These tests run the actual Move bytecode in a simulated environment before testnet deployment.
@@ -566,21 +623,6 @@ let success = apex_payments::use_access(
 );
 
 // Both operations atomic - if use_access failed, purchase would revert
-```
-
-## Build & Deploy
-
-```bash
-# Build
-sui move build
-
-# Test (local Move VM)
-sui move test
-
-# Deploy to testnet
-sui client switch --env testnet
-sui client faucet
-sui client publish --gas-budget 500000000
 ```
 
 ## Security Features
