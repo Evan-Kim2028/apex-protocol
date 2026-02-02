@@ -155,10 +155,12 @@ apex-protocol/
 ├── demo/                        # Local PTB replay demo (5 demos)
 │   ├── Cargo.toml               # Imports sui-sandbox
 │   ├── DEMO.md                  # Comprehensive demo guide
+│   ├── ptb_traces.json          # Generated PTB traces (gitignored)
 │   └── src/main.rs              # Full protocol flow demo
 ├── docs/
 │   ├── APEX_ARCHITECTURE.md     # Detailed architecture docs
 │   ├── PTB_EXAMPLES.md          # PTB input/output examples
+│   ├── PTB_TRACES.md            # PTB traces documentation (local explorer)
 │   └── DESIGN_DECISIONS.md      # Design rationale and tradeoffs
 └── README.md
 ```
@@ -361,6 +363,7 @@ The demo uses [sui-sandbox](https://github.com/Evan-Kim2028/sui-sandbox) for loc
 ## Documentation
 
 - **[Demo Guide](demo/DEMO.md)** - How the local demo works, code walkthrough, troubleshooting
+- **[PTB Traces](docs/PTB_TRACES.md)** - Local "blockchain explorer" showing all PTB inputs/outputs from the simulation
 - [Design Decisions](docs/DESIGN_DECISIONS.md) - Rationale, tradeoffs, competitive analysis, and evolution roadmap
 - [PTB Examples](docs/PTB_EXAMPLES.md) - Detailed input/output examples
 - [Architecture](docs/APEX_ARCHITECTURE.md) - System diagrams
