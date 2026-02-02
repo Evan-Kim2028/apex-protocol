@@ -71,6 +71,7 @@ This is possible because:
 2. **Load**: Demo loads the bytecode into sui-sandbox
 3. **Execute**: Demo constructs PTBs and executes them
 4. **Verify**: Results are checked and printed
+5. **Export**: PTB traces saved to `ptb_traces.json` for inspection
 
 ## Running the Demo
 
@@ -115,6 +116,68 @@ You'll see 5 demos execute sequentially:
 ```
 
 Each demo prints step-by-step progress and PTB patterns used.
+
+### JSON Output
+
+After all demos complete, the PTB traces are saved to `ptb_traces.json`:
+
+```json
+{
+  "protocol": "APEX Protocol",
+  "version": "0.1.0",
+  "timestamp": "1770070814s",
+  "traces": [
+    {
+      "demo": "Demo 1: Basic Flow",
+      "step": "register_service",
+      "sender": "0x1111...1111",
+      "inputs": [
+        {
+          "index": 0,
+          "input_type": "SharedMut",
+          "object_id": "0x5cce...5e45",
+          "type_tag": null
+        },
+        {
+          "index": 1,
+          "input_type": "Pure",
+          "value": "0x0e41492054726164696e6720415049"
+        }
+      ],
+      "commands": [
+        {
+          "index": 0,
+          "command_type": "MoveCall",
+          "package": "0xaa00...0000",
+          "module": "apex_payments",
+          "function": "register_service",
+          "type_args": [],
+          "args": ["Input(0)", "Input(1)", "Input(2)", "Input(3)", "Input(4)"]
+        }
+      ],
+      "outputs": {
+        "success": true,
+        "gas_used": 2575,
+        "created_objects": [
+          {
+            "object_id": "0x6d29...7383",
+            "object_type": "0x0::apex_payments::ServiceProvider",
+            "owner": "Some(Shared)"
+          }
+        ],
+        "mutated_objects": ["0x5cce...5e45"],
+        "error": null
+      }
+    }
+  ]
+}
+```
+
+This JSON output is useful for:
+- Debugging PTB construction issues
+- Understanding actual inputs/outputs of each operation
+- Building integration tests that verify expected behavior
+- Learning how to construct PTBs for your own agent
 
 ## The 5 Demos Explained
 

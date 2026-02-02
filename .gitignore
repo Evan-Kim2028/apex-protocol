@@ -24,3 +24,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Demo generated output
+demo/ptb_traces.json

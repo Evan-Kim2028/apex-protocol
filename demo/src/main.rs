@@ -48,10 +48,361 @@ use anyhow::{anyhow, Result};
 use move_core_types::account_address::AccountAddress;
 use move_core_types::identifier::Identifier;
 use move_core_types::language_storage::TypeTag;
+use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::PathBuf;
 
 use sui_sandbox::ptb::{Argument, Command, InputValue, ObjectInput};
 use sui_sandbox::simulation::{SimulationEnvironment, ExecutionResult};
+
+// =========================================================================
+// JSON Output Structures for PTB Traces
+// =========================================================================
+
+/// Represents a complete PTB execution trace for JSON export
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PtbTrace {
+    pub demo: String,
+    pub step: String,
+    pub sender: String,
+    pub inputs: Vec<PtbInput>,
+    pub commands: Vec<PtbCommand>,
+    pub outputs: PtbOutputs,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PtbInput {
+    pub index: usize,
+    pub input_type: String,
+    pub object_id: Option<String>,
+    pub type_tag: Option<String>,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PtbCommand {
+    pub index: usize,
+    pub command_type: String,
+    pub package: Option<String>,
+    pub module: Option<String>,
+    pub function: Option<String>,
+    pub type_args: Vec<String>,
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PtbOutputs {
+    pub success: bool,
+    pub gas_used: u64,
+    pub created_objects: Vec<CreatedObject>,
+    pub mutated_objects: Vec<String>,
+    pub events: Vec<PtbEvent>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreatedObject {
+    pub object_id: String,
+    pub object_type: String,
+    pub owner: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PtbEvent {
+    pub event_type: String,
+    pub data: serde_json::Value,
+}
+
+/// Collection of all PTB traces from the demo
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DemoTraces {
+    pub protocol: String,
+    pub version: String,
+    pub timestamp: String,
+    pub traces: Vec<PtbTrace>,
+}
+
+impl DemoTraces {
+    pub fn new() -> Self {
+        Self {
+            protocol: "APEX Protocol".to_string(),
+            version: "0.1.0".to_string(),
+            timestamp: chrono_lite_timestamp(),
+            traces: Vec::new(),
+        }
+    }
+
+    pub fn add_trace(&mut self, trace: PtbTrace) {
+        self.traces.push(trace);
+    }
+
+    pub fn save_to_file(&self, path: &str) -> Result<()> {
+        let json = serde_json::to_string_pretty(self)?;
+        fs::write(path, json)?;
+        Ok(())
+    }
+}
+
+/// Simple timestamp without chrono dependency
+fn chrono_lite_timestamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    format!("{}s", duration.as_secs())
+}
+
+/// Global trace collector using thread-safe Mutex
+use std::sync::Mutex;
+use std::sync::OnceLock;
+
+static DEMO_TRACES: OnceLock<Mutex<DemoTraces>> = OnceLock::new();
+
+fn get_traces() -> &'static Mutex<DemoTraces> {
+    DEMO_TRACES.get_or_init(|| Mutex::new(DemoTraces::new()))
+}
+
+fn record_trace(trace: PtbTrace) {
+    if let Ok(mut traces) = get_traces().lock() {
+        traces.add_trace(trace);
+    }
+}
+
+fn save_traces() -> Result<()> {
+    if let Ok(traces) = get_traces().lock() {
+        traces.save_to_file("ptb_traces.json")?;
+        println!("\n  📄 PTB traces saved to: ptb_traces.json");
+    }
+    Ok(())
+}
+
+/// Helper to format an input for JSON
+fn format_input(input: &InputValue, index: usize) -> PtbInput {
+    match input {
+        InputValue::Pure(bytes) => PtbInput {
+            index,
+            input_type: "Pure".to_string(),
+            object_id: None,
+            type_tag: None,
+            value: Some(format!("0x{}", hex::encode(bytes))),
+        },
+        InputValue::Object(obj) => {
+            let (input_type, obj_id, type_tag) = match obj {
+                ObjectInput::ImmRef { id, type_tag, .. } => (
+                    "ImmRef",
+                    format!("0x{:x}", id),
+                    type_tag.as_ref().map(|t| format!("{}", t)),
+                ),
+                ObjectInput::MutRef { id, type_tag, .. } => (
+                    "MutRef",
+                    format!("0x{:x}", id),
+                    type_tag.as_ref().map(|t| format!("{}", t)),
+                ),
+                ObjectInput::Owned { id, type_tag, .. } => (
+                    "Owned",
+                    format!("0x{:x}", id),
+                    type_tag.as_ref().map(|t| format!("{}", t)),
+                ),
+                ObjectInput::Shared { id, type_tag, mutable, .. } => (
+                    if *mutable { "SharedMut" } else { "SharedImm" },
+                    format!("0x{:x}", id),
+                    type_tag.as_ref().map(|t| format!("{}", t)),
+                ),
+                ObjectInput::Receiving { id, type_tag, .. } => (
+                    "Receiving",
+                    format!("0x{:x}", id),
+                    type_tag.as_ref().map(|t| format!("{}", t)),
+                ),
+            };
+            PtbInput {
+                index,
+                input_type: input_type.to_string(),
+                object_id: Some(obj_id),
+                type_tag,
+                value: None,
+            }
+        }
+    }
+}
+
+/// Helper to format a command for JSON
+fn format_command(cmd: &Command, index: usize) -> PtbCommand {
+    match cmd {
+        Command::MoveCall { package, module, function, type_args, args } => PtbCommand {
+            index,
+            command_type: "MoveCall".to_string(),
+            package: Some(format!("0x{:x}", package)),
+            module: Some(module.to_string()),
+            function: Some(function.to_string()),
+            type_args: type_args.iter().map(|t| format!("{}", t)).collect(),
+            args: args.iter().map(|a| format!("{:?}", a)).collect(),
+        },
+        Command::TransferObjects { objects, address } => PtbCommand {
+            index,
+            command_type: "TransferObjects".to_string(),
+            package: None,
+            module: None,
+            function: None,
+            type_args: vec![],
+            args: vec![
+                format!("objects: {:?}", objects),
+                format!("to: {:?}", address),
+            ],
+        },
+        Command::SplitCoins { coin, amounts } => PtbCommand {
+            index,
+            command_type: "SplitCoins".to_string(),
+            package: None,
+            module: None,
+            function: None,
+            type_args: vec![],
+            args: vec![
+                format!("coin: {:?}", coin),
+                format!("amounts: {:?}", amounts),
+            ],
+        },
+        Command::MergeCoins { destination, sources } => PtbCommand {
+            index,
+            command_type: "MergeCoins".to_string(),
+            package: None,
+            module: None,
+            function: None,
+            type_args: vec![],
+            args: vec![
+                format!("destination: {:?}", destination),
+                format!("sources: {:?}", sources),
+            ],
+        },
+        Command::MakeMoveVec { type_tag, elements } => PtbCommand {
+            index,
+            command_type: "MakeMoveVec".to_string(),
+            package: None,
+            module: None,
+            function: None,
+            type_args: type_tag.as_ref().map(|t| vec![format!("{}", t)]).unwrap_or_default(),
+            args: vec![format!("elements: {:?}", elements)],
+        },
+        Command::Publish { modules, dep_ids } => PtbCommand {
+            index,
+            command_type: "Publish".to_string(),
+            package: None,
+            module: None,
+            function: None,
+            type_args: vec![],
+            args: vec![
+                format!("modules: {} modules", modules.len()),
+                format!("deps: {:?}", dep_ids),
+            ],
+        },
+        Command::Upgrade { modules, package, ticket } => PtbCommand {
+            index,
+            command_type: "Upgrade".to_string(),
+            package: Some(format!("0x{:x}", package)),
+            module: None,
+            function: None,
+            type_args: vec![],
+            args: vec![
+                format!("modules: {} modules", modules.len()),
+                format!("ticket: {:?}", ticket),
+            ],
+        },
+        Command::Receive { object_id, object_type } => PtbCommand {
+            index,
+            command_type: "Receive".to_string(),
+            package: None,
+            module: None,
+            function: None,
+            type_args: object_type.as_ref().map(|t| vec![format!("{}", t)]).unwrap_or_default(),
+            args: vec![format!("object_id: 0x{:x}", object_id)],
+        },
+    }
+}
+
+/// Helper to create a trace from PTB execution
+fn create_trace(
+    demo: &str,
+    step: &str,
+    sender: &AccountAddress,
+    inputs: &[InputValue],
+    commands: &[Command],
+    result: &ExecutionResult,
+    env: &SimulationEnvironment,
+) -> PtbTrace {
+    let formatted_inputs: Vec<PtbInput> = inputs
+        .iter()
+        .enumerate()
+        .map(|(i, input)| format_input(input, i))
+        .collect();
+
+    let formatted_commands: Vec<PtbCommand> = commands
+        .iter()
+        .enumerate()
+        .map(|(i, cmd)| format_command(cmd, i))
+        .collect();
+
+    let outputs = if result.success {
+        let effects = result.effects.as_ref();
+        let created_objects: Vec<CreatedObject> = effects
+            .map(|e| {
+                e.created
+                    .iter()
+                    .map(|id| {
+                        let obj = env.get_object(id);
+                        CreatedObject {
+                            object_id: format!("0x{:x}", id),
+                            object_type: obj
+                                .map(|o| format!("{}", o.type_tag))
+                                .unwrap_or_else(|| "unknown".to_string()),
+                            owner: obj
+                                .map(|o| format!("{:?}", o.owner))
+                                .unwrap_or_else(|| "unknown".to_string()),
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let mutated_objects: Vec<String> = effects
+            .map(|e| e.mutated.iter().map(|id| format!("0x{:x}", id)).collect())
+            .unwrap_or_default();
+
+        let gas_used = effects.map(|e| e.gas_used).unwrap_or(0);
+
+        PtbOutputs {
+            success: true,
+            gas_used,
+            created_objects,
+            mutated_objects,
+            events: vec![], // Events could be added if needed
+            error: None,
+        }
+    } else {
+        PtbOutputs {
+            success: false,
+            gas_used: 0,
+            created_objects: vec![],
+            mutated_objects: vec![],
+            events: vec![],
+            error: result.error.as_ref().map(|e| format!("{:?}", e)),
+        }
+    };
+
+    PtbTrace {
+        demo: demo.to_string(),
+        step: step.to_string(),
+        sender: format!("0x{:x}", sender),
+        inputs: formatted_inputs,
+        commands: formatted_commands,
+        outputs,
+    }
+}
+
+// Simple hex encoding (avoiding extra dependency)
+mod hex {
+    pub fn encode(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+}
 
 // Test addresses
 const ADMIN: &str = "0xAD00000000000000000000000000000000000000000000000000000000000001";
@@ -80,6 +431,10 @@ fn main() -> Result<()> {
     demo_agentic_hedge_fund()?;
 
     print_final_summary();
+
+    // Save PTB traces to JSON file
+    save_traces()?;
+
     Ok(())
 }
 
@@ -1486,7 +1841,19 @@ fn register_service(
         ],
     }];
 
-    let result = env.execute_ptb(inputs, commands);
+    let sender = env.sender();
+    let result = env.execute_ptb(inputs.clone(), commands.clone());
+
+    // Record trace
+    record_trace(create_trace(
+        "Demo 1: Basic Flow",
+        "register_service",
+        &sender,
+        &inputs,
+        &commands,
+        &result,
+        env,
+    ));
 
     if !result.success {
         return Err(anyhow!("Register service failed: {:?}", result.error));
@@ -1584,7 +1951,18 @@ fn purchase_access(
         },
     ];
 
-    let result = env.execute_ptb(inputs, commands);
+    let result = env.execute_ptb(inputs.clone(), commands.clone());
+
+    // Record trace
+    record_trace(create_trace(
+        "Demo 1: Basic Flow",
+        "purchase_access",
+        &sender,
+        &inputs,
+        &commands,
+        &result,
+        env,
+    ));
 
     if !result.success {
         return Err(anyhow!("Purchase failed: {:?}", result.error));
@@ -1645,7 +2023,20 @@ fn use_access(
         ],
     }];
 
-    let result = env.execute_ptb(inputs, commands);
+    let sender = env.sender();
+    let result = env.execute_ptb(inputs.clone(), commands.clone());
+
+    // Record trace
+    record_trace(create_trace(
+        "Demo 1: Basic Flow",
+        "use_access",
+        &sender,
+        &inputs,
+        &commands,
+        &result,
+        env,
+    ));
+
     Ok(result.success)
 }
 

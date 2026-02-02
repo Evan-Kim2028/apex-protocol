@@ -16,6 +16,8 @@ sui-sandbox = { git = "https://github.com/Evan-Kim2028/sui-sandbox", package = "
 # Core dependencies
 anyhow = "1.0"
 bcs = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 # Use same move-core-types as sui-sandbox (from MystenLabs/sui)
 move-core-types = { git = "https://github.com/MystenLabs/sui", tag = "mainnet-v1.64.2", package = "move-core-types" }
