@@ -323,8 +323,9 @@ After running the demo successfully:
 ### Build Errors
 
 ```bash
-# If Move build fails
-sui move build --fetch-deps-only
+# If Move build fails, try cleaning and rebuilding
+cd apex-protocol
+rm -rf build/
 sui move build
 ```
 
