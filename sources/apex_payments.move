@@ -1055,3 +1055,10 @@ public fun service_total_served(service: &ServiceProvider): u64 {
 public fun protocol_is_paused(config: &ProtocolConfig): bool {
     config.paused
 }
+
+// ==================== Test Helpers ====================
+
+#[test_only]
+public fun init_for_testing(ctx: &mut TxContext) {
+    init(APEX_PAYMENTS {}, ctx)
+}

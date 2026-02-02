@@ -331,6 +331,16 @@ public fun create_trading_service(
     service
 }
 
+/// Create and share a trading service in one call
+public entry fun create_and_share_trading_service(
+    apex_service_id: ID,
+    fee_per_trade: u64,
+    ctx: &mut TxContext
+) {
+    let service = create_trading_service(apex_service_id, fee_per_trade, ctx);
+    transfer::share_object(service);
+}
+
 /// Verify payment before allowing trade
 ///
 /// This function checks that the caller has a valid AccessCapability
