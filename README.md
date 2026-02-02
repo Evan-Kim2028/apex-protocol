@@ -158,9 +158,9 @@ apex-protocol/
 │   ├── ptb_traces.json          # Generated PTB traces (gitignored)
 │   └── src/main.rs              # Full protocol flow demo
 ├── docs/
-│   ├── APEX_ARCHITECTURE.md     # Detailed architecture docs
-│   ├── PTB_EXAMPLES.md          # PTB input/output examples
-│   ├── PTB_TRACES.md            # PTB traces documentation (local explorer)
+│   ├── PTB_GUIDE.md             # Quick reference for all PTB operations
+│   ├── PTB_TRACES.md            # Trace schema and decoding guide
+│   ├── APEX_ARCHITECTURE.md     # System diagrams
 │   └── DESIGN_DECISIONS.md      # Design rationale and tradeoffs
 └── README.md
 ```
@@ -363,9 +363,9 @@ The demo uses [sui-sandbox](https://github.com/Evan-Kim2028/sui-sandbox) for loc
 ## Documentation
 
 - **[Demo Guide](demo/DEMO.md)** - How the local demo works, code walkthrough, troubleshooting
-- **[PTB Traces](docs/PTB_TRACES.md)** - Local "blockchain explorer" showing all PTB inputs/outputs from the simulation
-- [Design Decisions](docs/DESIGN_DECISIONS.md) - Rationale, tradeoffs, competitive analysis, and evolution roadmap
-- [PTB Examples](docs/PTB_EXAMPLES.md) - Detailed input/output examples
+- **[PTB Guide](docs/PTB_GUIDE.md)** - Quick reference: all function signatures and outputs across 5 demos
+- [PTB Traces](docs/PTB_TRACES.md) - Full trace schema and decoding guide for `ptb_traces.json`
+- [Design Decisions](docs/DESIGN_DECISIONS.md) - Rationale, tradeoffs, competitive analysis
 - [Architecture](docs/APEX_ARCHITECTURE.md) - System diagrams
 
 ## References
