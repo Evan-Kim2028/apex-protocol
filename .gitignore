@@ -1,0 +1,34 @@
+# Build artifacts
+build/
+.build/
+
+# Sui
+.sui/
+Move.lock
+
+# Node.js (sandbox)
+node_modules/
+sandbox/node_modules/
+sandbox/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/

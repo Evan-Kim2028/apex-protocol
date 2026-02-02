@@ -1,0 +1,13 @@
+[package]
+name = "dexter_payment"
+edition = "2024.beta"
+version = "0.0.1"
+
+[dependencies]
+# DeepBook V3 core dependency - Sui framework is auto-included
+deepbook = { git = "https://github.com/MystenLabs/deepbookv3.git", subdir = "packages/deepbook", rev = "main" }
+# DeepBook V3 margin package for leveraged trading
+deepbook_margin = { git = "https://github.com/MystenLabs/deepbookv3.git", subdir = "packages/deepbook_margin", rev = "main" }
+
+[addresses]
+dexter_payment = "0x0"
