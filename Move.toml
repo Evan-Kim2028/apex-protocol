@@ -3,11 +3,21 @@ name = "apex_protocol"
 edition = "2024.beta"
 version = "0.1.0"
 
-# Note: For Seal integration, copy seal patterns locally or use local path
-# seal = { local = "../../path/to/seal/move/seal" }
-
 [dependencies]
-Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "mainnet-v1.63.4" }
+# Sui framework - use mainnet revision for compatibility
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/mainnet", override = true }
+MoveStdlib = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/move-stdlib", rev = "framework/mainnet", override = true }
+
+# NOTE: DeepBook dependencies are NOT included at compile time.
+# Instead, DeepBook is loaded at RUNTIME via sui-sandbox mainnet forking.
+# This allows using REAL mainnet DeepBook bytecode without address conflicts.
+#
+# At runtime, use:
+#   let fetcher = GrpcFetcher::mainnet();
+#   env.deploy_package_at_address(DEEPBOOK_V3_PACKAGE, fetcher.fetch_package_modules(...)?)?;
+#
+# Then call DeepBook functions via PTBs:
+#   Command::MoveCall { package: deepbook_addr, module: "pool", function: "swap_exact_base_for_quote", ... }
 
 [addresses]
 apex_protocol = "0x0"
