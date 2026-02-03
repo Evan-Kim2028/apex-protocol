@@ -6,8 +6,7 @@
 module apex_protocol::apex_tests;
 
 use sui::test_scenario::{Self as ts, Scenario};
-use sui::test_utils;
-use sui::clock::{Self, Clock};
+use sui::clock;
 use sui::coin::{Self, Coin};
 use sui::sui::SUI;
 
@@ -29,7 +28,6 @@ use apex_protocol::apex_trading::{
     Self,
     SwapIntent,
     TradingService,
-    IntentReceipt,
 };
 
 // ==================== Test Addresses ====================
@@ -54,11 +52,6 @@ fun setup_protocol(scenario: &mut Scenario) {
     };
 }
 
-/// Create a test clock at a specific timestamp
-fun create_clock(scenario: &mut Scenario, timestamp_ms: u64): Clock {
-    ts::next_tx(scenario, ADMIN);
-    clock::create_for_testing(ts::ctx(scenario))
-}
 
 /// Mint SUI for testing
 fun mint_sui(amount: u64, ctx: &mut tx_context::TxContext): Coin<SUI> {
@@ -393,7 +386,7 @@ fun test_open_and_consume_stream() {
 
         let escrow = mint_sui(10 * MIST_PER_SUI, ts::ctx(&mut scenario)); // 10 SUI
 
-        let stream_id = apex_payments::open_stream(
+        apex_payments::open_stream(
             &config,
             &service,
             escrow,
@@ -454,6 +447,7 @@ fun test_create_agent_wallet() {
             b"bot-001",
             100_000_000, // 0.1 SUI spend limit
             1_000_000_000, // 1 SUI daily limit
+            false, // restrict_funding
             funding,
             &clock,
             ts::ctx(&mut scenario)
@@ -506,6 +500,7 @@ fun test_agent_wallet_spending_limits() {
             b"bot-001",
             100_000_000, // 0.1 SUI spend limit per tx
             1_000_000_000, // 1 SUI daily limit
+            false, // restrict_funding
             mint_sui(5 * MIST_PER_SUI, ts::ctx(&mut scenario)),
             &clock,
             ts::ctx(&mut scenario)
@@ -584,6 +579,7 @@ fun test_agent_wallet_exceeds_spend_limit() {
             b"bot-001",
             50_000_000, // Only 0.05 SUI spend limit
             1_000_000_000,
+            false, // restrict_funding
             mint_sui(5 * MIST_PER_SUI, ts::ctx(&mut scenario)),
             &clock,
             ts::ctx(&mut scenario)
@@ -649,6 +645,7 @@ fun test_shield_transfer_complete() {
             payment,
             86400_000, // 24 hours
             secret_hash,
+            true, // require_secret
             &clock,
             ts::ctx(&mut scenario)
         );
@@ -707,6 +704,7 @@ fun test_shield_transfer_wrong_secret() {
             payment,
             86400_000,
             secret_hash,
+            true, // require_secret
             &clock,
             ts::ctx(&mut scenario)
         );
