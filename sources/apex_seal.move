@@ -24,7 +24,7 @@ use apex_protocol::apex_payments::{
 // ==================== Error Codes ====================
 const ENoAccess: u64 = 0;
 const EWrongVersion: u64 = 1;
-// EInvalidNamespace reserved for future use
+// EAlreadyInitialized (2) reserved for future singleton pattern implementation
 
 // ==================== Constants ====================
 const VERSION: u64 = 1;
@@ -51,8 +51,7 @@ fun init(ctx: &mut TxContext) {
     transfer::transfer(PackageVersionCap { id: object::new(ctx) }, ctx.sender());
 }
 
-/// Initialize Seal module for sandbox/testing.
-/// Creates PackageVersion (shared) and PackageVersionCap (transferred to sender).
+/// Initialize Seal module for sandbox testing (call once per deployment)
 public fun initialize_seal(ctx: &mut TxContext) {
     transfer::share_object(PackageVersion {
         id: object::new(ctx),

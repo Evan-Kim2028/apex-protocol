@@ -33,6 +33,10 @@ const EOverflow: u64 = 8;
 const EInvalidInput: u64 = 9;
 const EProtocolPaused: u64 = 10;
 const EInvalidSecret: u64 = 11;
+/// Secret is required but recipient tried to claim without it
+const ESecretRequired: u64 = 12;
+/// Wallet funding is restricted to owner only
+const EFundingRestricted: u64 = 13;
 
 // ==================== Constants ====================
 const MAX_NAME_LENGTH: u64 = 256;
@@ -168,6 +172,9 @@ public struct AgentWallet has key {
     nonce: u64,
     /// Emergency pause flag
     paused: bool,
+    /// If true, only owner can fund this wallet (prevents dust attacks)
+    /// If false, anyone can deposit (default for convenience)
+    restrict_funding: bool,
 }
 
 // ==================== Shield Transfer ====================
@@ -188,6 +195,9 @@ public struct ShieldSession has key {
     funds: Balance<SUI>,
     /// Hash of secret required to claim (keccak256)
     secret_hash: vector<u8>,
+    /// If true, recipient MUST provide secret to claim (atomic swap mode)
+    /// If false, recipient can claim directly (escrow mode)
+    require_secret: bool,
 }
 
 // ==================== Events ====================
@@ -267,6 +277,33 @@ public struct ShieldTransferCancelled has copy, drop {
     session_id: ID,
     sender: address,
     amount: u64,
+}
+
+public struct AgentWalletFunded has copy, drop {
+    wallet_id: ID,
+    amount: u64,
+}
+
+public struct AgentWalletPaused has copy, drop {
+    wallet_id: ID,
+    paused: bool,
+}
+
+public struct AgentLimitsUpdated has copy, drop {
+    wallet_id: ID,
+    spend_limit: u64,
+    daily_limit: u64,
+}
+
+public struct AuthorizationPaused has copy, drop {
+    auth_id: ID,
+    paused: bool,
+}
+
+public struct AuthorizationLimitsUpdated has copy, drop {
+    auth_id: ID,
+    spend_limit_per_tx: u64,
+    daily_limit: u64,
 }
 
 // ==================== Init ====================
@@ -635,7 +672,8 @@ public fun open_stream(
     stream_id
 }
 
-/// Provider records consumption from stream
+/// Provider records consumption from stream (provider-reported).
+/// For TEE-verified consumption, use `record_verified_consumption` instead.
 public fun record_stream_consumption(
     stream: &mut PaymentStream,
     service: &mut ServiceProvider,
@@ -716,12 +754,13 @@ public fun close_stream(
 
 // ==================== Agent Wallet Functions ====================
 
-/// Create an AI agent wallet with spending controls
+/// Create an agent wallet with spending controls
 public fun create_agent_wallet(
     config: &ProtocolConfig,
     agent_id: vector<u8>,
     spend_limit: u64,
     daily_limit: u64,
+    restrict_funding: bool,
     initial_funding: Coin<SUI>,
     clock: &Clock,
     ctx: &mut TxContext
@@ -739,6 +778,7 @@ public fun create_agent_wallet(
         current_day_start: get_day_start(clock::timestamp_ms(clock)),
         nonce: 0,
         paused: false,
+        restrict_funding,
     };
 
     event::emit(AgentWalletCreated {
@@ -812,12 +852,33 @@ public fun agent_purchase_access(
     }
 }
 
-/// Fund agent wallet
+/// Fund agent wallet (respects restrict_funding setting)
 public fun fund_agent_wallet(
     wallet: &mut AgentWallet,
     funding: Coin<SUI>,
+    ctx: &TxContext
 ) {
+    if (wallet.restrict_funding) {
+        assert!(ctx.sender() == wallet.owner, EFundingRestricted);
+    };
+
+    let amount = coin::value(&funding);
     balance::join(&mut wallet.balance, coin::into_balance(funding));
+
+    event::emit(AgentWalletFunded {
+        wallet_id: object::id(wallet),
+        amount,
+    });
+}
+
+/// Owner can toggle funding restriction
+public fun set_funding_restriction(
+    wallet: &mut AgentWallet,
+    restrict_funding: bool,
+    ctx: &TxContext
+) {
+    assert!(ctx.sender() == wallet.owner, EUnauthorized);
+    wallet.restrict_funding = restrict_funding;
 }
 
 /// Withdraw from agent wallet (owner only)
@@ -844,6 +905,11 @@ public fun set_agent_paused(
 ) {
     assert!(ctx.sender() == wallet.owner, EUnauthorized);
     wallet.paused = paused;
+
+    event::emit(AgentWalletPaused {
+        wallet_id: object::id(wallet),
+        paused,
+    });
 }
 
 /// Update agent spending limits (owner only)
@@ -856,17 +922,24 @@ public fun update_agent_limits(
     assert!(ctx.sender() == wallet.owner, EUnauthorized);
     wallet.spend_limit = spend_limit;
     wallet.daily_limit = daily_limit;
+
+    event::emit(AgentLimitsUpdated {
+        wallet_id: object::id(wallet),
+        spend_limit,
+        daily_limit,
+    });
 }
 
 // ==================== Shield Transfer Functions ====================
 
-/// Initiate a shielded (hash-locked) transfer
+/// Initiate a hash-locked transfer (require_secret: true for atomic swaps, false for escrow)
 public fun initiate_shield_transfer(
     config: &ProtocolConfig,
     recipient: address,
     payment: Coin<SUI>,
     duration_ms: u64,
     secret_hash: vector<u8>,
+    require_secret: bool,
     clock: &Clock,
     ctx: &mut TxContext
 ) {
@@ -884,6 +957,7 @@ public fun initiate_shield_transfer(
         expires_at,
         funds: coin::into_balance(payment),
         secret_hash,
+        require_secret,
     };
 
     event::emit(ShieldTransferInitiated {
@@ -896,7 +970,7 @@ public fun initiate_shield_transfer(
     transfer::share_object(session);
 }
 
-/// Complete shield transfer with secret
+/// Complete shield transfer with secret preimage
 public fun complete_shield_transfer(
     session: ShieldSession,
     secret: vector<u8>,
@@ -911,6 +985,7 @@ public fun complete_shield_transfer(
         expires_at,
         funds,
         secret_hash,
+        require_secret: _,
     } = session;
 
     assert!(clock::timestamp_ms(clock) <= expires_at, EExpired);
@@ -931,7 +1006,7 @@ public fun complete_shield_transfer(
     object::delete(id);
 }
 
-/// Complete shield transfer as designated recipient (no secret needed)
+/// Complete shield transfer as recipient (only if require_secret=false)
 public fun complete_shield_transfer_recipient(
     session: ShieldSession,
     clock: &Clock,
@@ -945,10 +1020,12 @@ public fun complete_shield_transfer_recipient(
         expires_at,
         funds,
         secret_hash: _,
+        require_secret,
     } = session;
 
     assert!(ctx.sender() == recipient, EUnauthorized);
     assert!(clock::timestamp_ms(clock) <= expires_at, EExpired);
+    assert!(!require_secret, ESecretRequired);
 
     let payment = coin::from_balance(funds, ctx);
     transfer::public_transfer(payment, recipient);
@@ -976,6 +1053,7 @@ public fun cancel_shield_transfer(
         expires_at,
         funds,
         secret_hash: _,
+        require_secret: _,
     } = session;
 
     assert!(clock::timestamp_ms(clock) > expires_at, EExpired);
@@ -1192,12 +1270,22 @@ public fun authorized_purchase(
 public fun pause_authorization(auth: &mut AgentAuthorization, ctx: &TxContext) {
     assert!(ctx.sender() == auth.owner, EUnauthorized);
     auth.paused = true;
+
+    event::emit(AuthorizationPaused {
+        auth_id: object::id(auth),
+        paused: true,
+    });
 }
 
 /// Owner unpauses authorization
 public fun unpause_authorization(auth: &mut AgentAuthorization, ctx: &TxContext) {
     assert!(ctx.sender() == auth.owner, EUnauthorized);
     auth.paused = false;
+
+    event::emit(AuthorizationPaused {
+        auth_id: object::id(auth),
+        paused: false,
+    });
 }
 
 /// Owner revokes (destroys) authorization
@@ -1234,6 +1322,12 @@ public fun update_authorization_limits(
     assert!(ctx.sender() == auth.owner, EUnauthorized);
     auth.spend_limit_per_tx = spend_limit_per_tx;
     auth.daily_limit = daily_limit;
+
+    event::emit(AuthorizationLimitsUpdated {
+        auth_id: object::id(auth),
+        spend_limit_per_tx,
+        daily_limit,
+    });
 }
 
 /// Owner adds allowed service
@@ -1328,8 +1422,7 @@ public fun deactivate_meter(
     meter.active = false;
 }
 
-/// Consume stream units with enclave-verified usage report
-/// Uses sui::ed25519::ed25519_verify for signature verification
+/// Consume stream units with TEE-verified usage report (Ed25519 signed).
 public fun record_verified_consumption(
     stream: &mut PaymentStream,
     service: &mut ServiceProvider,
