@@ -1,0 +1,560 @@
+{
+  "protocol": "APEX Protocol",
+  "version": "0.1.0",
+  "timestamp": "1770084840s",
+  "traces": [
+    {
+      "demo": "Demo 1: Basic Flow",
+      "step": "register_service",
+      "sender": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "inputs": [
+        {
+          "index": 0,
+          "input_type": "SharedMut",
+          "object_id": "0x8e4b534cb56e2740a468796e961c3d32dccf7f3b13da4141a9c157154ab9d7c1",
+          "type_tag": null,
+          "value": null
+        },
+        {
+          "index": 1,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x0c5072696365204f7261636c65"
+        },
+        {
+          "index": 2,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x215265616c2d74696d6520707269636520666565647320666f722074726164696e67"
+        },
+        {
+          "index": 3,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x404b4c0000000000"
+        },
+        {
+          "index": 4,
+          "input_type": "Owned",
+          "object_id": "0xaa00000000000000000000000000000000000000000000000100000000000000",
+          "type_tag": "0x2::coin::Coin<0x2::sui::SUI>",
+          "value": null
+        }
+      ],
+      "commands": [
+        {
+          "index": 0,
+          "command_type": "MoveCall",
+          "package": "0xaa00000000000000000000000000000000000000000000000000000000000000",
+          "module": "apex_payments",
+          "function": "register_service",
+          "type_args": [],
+          "args": [
+            "Input(0)",
+            "Input(1)",
+            "Input(2)",
+            "Input(3)",
+            "Input(4)"
+          ]
+        }
+      ],
+      "outputs": {
+        "success": true,
+        "gas_used": 2575,
+        "created_objects": [
+          {
+            "object_id": "0xf119f9ebd2d7fda36db6c7df48f8ffaffe9f004645b01ec1fb3837538417269c",
+            "object_type": "0x2::coin::Coin<0x2::sui::SUI>",
+            "owner": "Some(Address(1111111111111111111111111111111111111111111111111111111111111111))"
+          },
+          {
+            "object_id": "0x0a29b99de9e6aa7322f94b49b208ddf1e102860d12f1562770484b7ca3705f35",
+            "object_type": "0x0::apex_payments::ServiceProvider",
+            "owner": "Some(Shared)"
+          }
+        ],
+        "mutated_objects": [
+          "0x8e4b534cb56e2740a468796e961c3d32dccf7f3b13da4141a9c157154ab9d7c1"
+        ],
+        "events": [],
+        "error": null
+      }
+    },
+    {
+      "demo": "Demo 1: Basic Flow",
+      "step": "register_service",
+      "sender": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "inputs": [
+        {
+          "index": 0,
+          "input_type": "SharedMut",
+          "object_id": "0x8e4b534cb56e2740a468796e961c3d32dccf7f3b13da4141a9c157154ab9d7c1",
+          "type_tag": null,
+          "value": null
+        },
+        {
+          "index": 1,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x0c414920496e666572656e6365"
+        },
+        {
+          "index": 2,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x114c4c4d20696e666572656e636520415049"
+        },
+        {
+          "index": 3,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x002d310100000000"
+        },
+        {
+          "index": 4,
+          "input_type": "Owned",
+          "object_id": "0xaa00000000000000000000000000000000000000000000000200000000000000",
+          "type_tag": "0x2::coin::Coin<0x2::sui::SUI>",
+          "value": null
+        }
+      ],
+      "commands": [
+        {
+          "index": 0,
+          "command_type": "MoveCall",
+          "package": "0xaa00000000000000000000000000000000000000000000000000000000000000",
+          "module": "apex_payments",
+          "function": "register_service",
+          "type_args": [],
+          "args": [
+            "Input(0)",
+            "Input(1)",
+            "Input(2)",
+            "Input(3)",
+            "Input(4)"
+          ]
+        }
+      ],
+      "outputs": {
+        "success": true,
+        "gas_used": 2575,
+        "created_objects": [
+          {
+            "object_id": "0xb1f9c98de3c5979d67217d7f010d77d41858c486b7709d6f40255c6d2e0541ca",
+            "object_type": "0x2::coin::Coin<0x2::sui::SUI>",
+            "owner": "Some(Address(1111111111111111111111111111111111111111111111111111111111111111))"
+          },
+          {
+            "object_id": "0x0b2ee8417813a8f06bb077593e160d12f7953f052750534a1b9d8b2ee11eb006",
+            "object_type": "0x0::apex_payments::ServiceProvider",
+            "owner": "Some(Shared)"
+          }
+        ],
+        "mutated_objects": [
+          "0x8e4b534cb56e2740a468796e961c3d32dccf7f3b13da4141a9c157154ab9d7c1"
+        ],
+        "events": [],
+        "error": null
+      }
+    },
+    {
+      "demo": "Demo 1: Basic Flow",
+      "step": "use_access",
+      "sender": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "inputs": [
+        {
+          "index": 0,
+          "input_type": "MutRef",
+          "object_id": "0x97fa220c47c28839df57d96fbda05a560ca90e3fbe46ef4e87b353aef55bb348",
+          "type_tag": null,
+          "value": null
+        },
+        {
+          "index": 1,
+          "input_type": "SharedImm",
+          "object_id": "0x0a29b99de9e6aa7322f94b49b208ddf1e102860d12f1562770484b7ca3705f35",
+          "type_tag": null,
+          "value": null
+        },
+        {
+          "index": 2,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x0300000000000000"
+        },
+        {
+          "index": 3,
+          "input_type": "SharedImm",
+          "object_id": "0x0000000000000000000000000000000000000000000000000000000000000006",
+          "type_tag": null,
+          "value": null
+        }
+      ],
+      "commands": [
+        {
+          "index": 0,
+          "command_type": "MoveCall",
+          "package": "0xaa00000000000000000000000000000000000000000000000000000000000000",
+          "module": "apex_payments",
+          "function": "use_access",
+          "type_args": [],
+          "args": [
+            "Input(0)",
+            "Input(1)",
+            "Input(2)",
+            "Input(3)"
+          ]
+        }
+      ],
+      "outputs": {
+        "success": true,
+        "gas_used": 5203,
+        "created_objects": [],
+        "mutated_objects": [
+          "0x97fa220c47c28839df57d96fbda05a560ca90e3fbe46ef4e87b353aef55bb348"
+        ],
+        "events": [],
+        "error": null
+      }
+    },
+    {
+      "demo": "Demo 1: Basic Flow",
+      "step": "register_service",
+      "sender": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "inputs": [
+        {
+          "index": 0,
+          "input_type": "SharedMut",
+          "object_id": "0x0c382fa6277f74fac7120dc394b610840eada5edabaaf89a8405b0a058f0da95",
+          "type_tag": null,
+          "value": null
+        },
+        {
+          "index": 1,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x11456e63727970746564204c4c4d20415049"
+        },
+        {
+          "index": 2,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x225365616c2d656e6372797074656420696e666572656e636520656e64706f696e7473"
+        },
+        {
+          "index": 3,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x80f0fa0200000000"
+        },
+        {
+          "index": 4,
+          "input_type": "Owned",
+          "object_id": "0xaa00000000000000000000000000000000000000000000000100000000000000",
+          "type_tag": "0x2::coin::Coin<0x2::sui::SUI>",
+          "value": null
+        }
+      ],
+      "commands": [
+        {
+          "index": 0,
+          "command_type": "MoveCall",
+          "package": "0xaa00000000000000000000000000000000000000000000000000000000000000",
+          "module": "apex_payments",
+          "function": "register_service",
+          "type_args": [],
+          "args": [
+            "Input(0)",
+            "Input(1)",
+            "Input(2)",
+            "Input(3)",
+            "Input(4)"
+          ]
+        }
+      ],
+      "outputs": {
+        "success": true,
+        "gas_used": 2575,
+        "created_objects": [
+          {
+            "object_id": "0x51849eeb02e867e08efb109f2b38876708ef4d51bbc3b0f9e50941ae23d1b0b2",
+            "object_type": "0x2::coin::Coin<0x2::sui::SUI>",
+            "owner": "Some(Address(1111111111111111111111111111111111111111111111111111111111111111))"
+          },
+          {
+            "object_id": "0xbf5c3aff73f1e1095b41eb3a16932d556cdc6f92a2338254cc15476c76ef0c69",
+            "object_type": "0x0::apex_payments::ServiceProvider",
+            "owner": "Some(Shared)"
+          }
+        ],
+        "mutated_objects": [
+          "0x0c382fa6277f74fac7120dc394b610840eada5edabaaf89a8405b0a058f0da95"
+        ],
+        "events": [],
+        "error": null
+      }
+    },
+    {
+      "demo": "Demo 1: Basic Flow",
+      "step": "purchase_access",
+      "sender": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "inputs": [
+        {
+          "index": 0,
+          "input_type": "SharedMut",
+          "object_id": "0x0c382fa6277f74fac7120dc394b610840eada5edabaaf89a8405b0a058f0da95",
+          "type_tag": null,
+          "value": null
+        },
+        {
+          "index": 1,
+          "input_type": "SharedMut",
+          "object_id": "0xbf5c3aff73f1e1095b41eb3a16932d556cdc6f92a2338254cc15476c76ef0c69",
+          "type_tag": null,
+          "value": null
+        },
+        {
+          "index": 2,
+          "input_type": "Owned",
+          "object_id": "0xaa00000000000000000000000000000000000000000000000200000000000000",
+          "type_tag": "0x2::coin::Coin<0x2::sui::SUI>",
+          "value": null
+        },
+        {
+          "index": 3,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x6400000000000000"
+        },
+        {
+          "index": 4,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x80ee360000000000"
+        },
+        {
+          "index": 5,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x0000000000000000"
+        },
+        {
+          "index": 6,
+          "input_type": "SharedImm",
+          "object_id": "0x0000000000000000000000000000000000000000000000000000000000000006",
+          "type_tag": null,
+          "value": null
+        },
+        {
+          "index": 7,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      ],
+      "commands": [
+        {
+          "index": 0,
+          "command_type": "MoveCall",
+          "package": "0xaa00000000000000000000000000000000000000000000000000000000000000",
+          "module": "apex_payments",
+          "function": "purchase_access",
+          "type_args": [],
+          "args": [
+            "Input(0)",
+            "Input(1)",
+            "Input(2)",
+            "Input(3)",
+            "Input(4)",
+            "Input(5)",
+            "Input(6)"
+          ]
+        },
+        {
+          "index": 1,
+          "command_type": "TransferObjects",
+          "package": null,
+          "module": null,
+          "function": null,
+          "type_args": [],
+          "args": [
+            "objects: [NestedResult(0, 0)]",
+            "to: Input(7)"
+          ]
+        }
+      ],
+      "outputs": {
+        "success": true,
+        "gas_used": 6807,
+        "created_objects": [
+          {
+            "object_id": "0x256ebb492bea25d95053fc48928d89e8fa7b54eab7f7def8f2f7071914bc0f4b",
+            "object_type": "0x0::apex_payments::AccessCapability",
+            "owner": "Some(Address(2222222222222222222222222222222222222222222222222222222222222222))"
+          }
+        ],
+        "mutated_objects": [
+          "0x0c382fa6277f74fac7120dc394b610840eada5edabaaf89a8405b0a058f0da95",
+          "0xbf5c3aff73f1e1095b41eb3a16932d556cdc6f92a2338254cc15476c76ef0c69"
+        ],
+        "events": [],
+        "error": null
+      }
+    },
+    {
+      "demo": "Demo 1: Basic Flow",
+      "step": "use_access",
+      "sender": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "inputs": [
+        {
+          "index": 0,
+          "input_type": "MutRef",
+          "object_id": "0x256ebb492bea25d95053fc48928d89e8fa7b54eab7f7def8f2f7071914bc0f4b",
+          "type_tag": null,
+          "value": null
+        },
+        {
+          "index": 1,
+          "input_type": "SharedImm",
+          "object_id": "0xbf5c3aff73f1e1095b41eb3a16932d556cdc6f92a2338254cc15476c76ef0c69",
+          "type_tag": null,
+          "value": null
+        },
+        {
+          "index": 2,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x0f00000000000000"
+        },
+        {
+          "index": 3,
+          "input_type": "SharedImm",
+          "object_id": "0x0000000000000000000000000000000000000000000000000000000000000006",
+          "type_tag": null,
+          "value": null
+        }
+      ],
+      "commands": [
+        {
+          "index": 0,
+          "command_type": "MoveCall",
+          "package": "0xaa00000000000000000000000000000000000000000000000000000000000000",
+          "module": "apex_payments",
+          "function": "use_access",
+          "type_args": [],
+          "args": [
+            "Input(0)",
+            "Input(1)",
+            "Input(2)",
+            "Input(3)"
+          ]
+        }
+      ],
+      "outputs": {
+        "success": true,
+        "gas_used": 5293,
+        "created_objects": [],
+        "mutated_objects": [
+          "0x256ebb492bea25d95053fc48928d89e8fa7b54eab7f7def8f2f7071914bc0f4b"
+        ],
+        "events": [],
+        "error": null
+      }
+    },
+    {
+      "demo": "Demo 1: Basic Flow",
+      "step": "register_service",
+      "sender": "0xad00000000000000000000000000000000000000000000000000000000000001",
+      "inputs": [
+        {
+          "index": 0,
+          "input_type": "SharedMut",
+          "object_id": "0x292f0639c622b5d175b77fe8ff047d2c8f1dbd5bdce47b08c57bf131e348152a",
+          "type_tag": null,
+          "value": null
+        },
+        {
+          "index": 1,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x0f486564676546756e6420456e747279"
+        },
+        {
+          "index": 2,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x14456e7472792066656520636f6c6c656374696f6e"
+        },
+        {
+          "index": 3,
+          "input_type": "Pure",
+          "object_id": null,
+          "type_tag": null,
+          "value": "0x00e1f50500000000"
+        },
+        {
+          "index": 4,
+          "input_type": "Owned",
+          "object_id": "0xaa00000000000000000000000000000000000000000000000100000000000000",
+          "type_tag": "0x2::coin::Coin<0x2::sui::SUI>",
+          "value": null
+        }
+      ],
+      "commands": [
+        {
+          "index": 0,
+          "command_type": "MoveCall",
+          "package": "0xaa00000000000000000000000000000000000000000000000000000000000000",
+          "module": "apex_payments",
+          "function": "register_service",
+          "type_args": [],
+          "args": [
+            "Input(0)",
+            "Input(1)",
+            "Input(2)",
+            "Input(3)",
+            "Input(4)"
+          ]
+        }
+      ],
+      "outputs": {
+        "success": true,
+        "gas_used": 2575,
+        "created_objects": [
+          {
+            "object_id": "0x35397ce7dcde6bdb4ea3a1f3f213842a2ee23d636680cca8fe2c868c8300e296",
+            "object_type": "0x2::coin::Coin<0x2::sui::SUI>",
+            "owner": "Some(Address(ad00000000000000000000000000000000000000000000000000000000000001))"
+          },
+          {
+            "object_id": "0xb33ef377f166c714e1f76e9894fed763e60e65850d17566ef2e1ac9f98743b9c",
+            "object_type": "0x0::apex_payments::ServiceProvider",
+            "owner": "Some(Shared)"
+          }
+        ],
+        "mutated_objects": [
+          "0x292f0639c622b5d175b77fe8ff047d2c8f1dbd5bdce47b08c57bf131e348152a"
+        ],
+        "events": [],
+        "error": null
+      }
+    }
+  ]
+}
